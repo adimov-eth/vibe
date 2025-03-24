@@ -1,3 +1,5 @@
+import ErrorDisplay from '@/components/layout/ErrorDisplay';
+import { ToastProvider } from "@/components/ui/Toast";
 import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
 import { Stack } from 'expo-router';
 import * as SecureStore from "expo-secure-store";
@@ -7,7 +9,6 @@ import React, { useEffect } from 'react';
 import { View } from 'react-native';
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { ToastProvider } from "../components/ui/Toast";
 
 // Token cache implementation for Clerk
 const tokenCache = {
@@ -15,6 +16,7 @@ const tokenCache = {
     try {
       return SecureStore.getItemAsync(key);
     } catch (err) {
+      console.error(err);
       return null;
     }
   },
@@ -22,6 +24,7 @@ const tokenCache = {
     try {
       return SecureStore.setItemAsync(key, value);
     } catch (err) {
+      console.error(err);
       return;
     }
   },
@@ -68,6 +71,7 @@ export default function RootLayout() {
         <StatusBar style="auto" />
         <View style={{ flex: 1 }}>
           <NavigationLayout />
+          <ErrorDisplay />
           <ToastProvider />
         </View>
       </SafeAreaProvider>

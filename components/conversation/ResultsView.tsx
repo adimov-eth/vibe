@@ -1,13 +1,15 @@
+import { type AnalysisResponse } from '@/services/api';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 
+
 interface ResultsViewProps {
   isLoading: boolean;
   progress: number;
-  result: unknown;
+  result: AnalysisResponse | null;
   error: string | null;
   accentColor: string;
   onNewConversation: () => void;
@@ -95,7 +97,7 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
       {result.recommendations && result.recommendations.length > 0 && (
         <Card style={styles.recommendationsCard}>
           <Text style={styles.sectionTitle}>Recommendations</Text>
-          {result.recommendations.map((recommendation: string, index: number) => (
+          {result.recommendations.map((recommendation, index) => (
             <View key={index} style={styles.recommendationItem}>
               <View style={[styles.recommendationBullet, { backgroundColor: accentColor }]}>
                 <Text style={styles.recommendationNumber}>{index + 1}</Text>

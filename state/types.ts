@@ -55,17 +55,45 @@ export interface ConversationSlice {
   getConversation: (conversationId: string) => Promise<Conversation>;
 }
 
+export interface SubscriptionResponse {
+  subscription: SubscriptionStatus;
+  message?: string;
+}
+
+export interface UsageResponse {
+  usage: UsageStats;
+  message?: string;
+}
+
+export interface WebSocketMessage {
+  type: 'transcript' | 'analysis' | 'error' | 'status';
+  payload: {
+    conversationId?: string;
+    content?: string;
+    error?: string;
+    status?: string;
+  };
+  timestamp: string;
+}
+
 export interface SubscriptionSlice {
   subscriptionStatus: SubscriptionStatus | null;
   usageStats: UsageStats | null;
-  verifySubscription: (receiptData: string) => Promise<any>;
-  checkSubscriptionStatus: () => Promise<any>;
-  getUsageStats: () => Promise<any>;
+  subscriptionProducts: SubscriptionProduct[];
+  subscriptionLoading: boolean;
+  subscriptionError: Error | null;
+  verifySubscription: (receiptData: string) => Promise<SubscriptionResponse>;
+  checkSubscriptionStatus: () => Promise<SubscriptionResponse>;
+  getUsageStats: () => Promise<UsageResponse>;
+  initializeStore: () => Promise<void>;
+  cleanupStore: () => void;
+  purchaseSubscription: (productId: string, offerToken?: string) => Promise<void>;
+  restorePurchases: () => Promise<void>;
 }
 
 export interface WebSocketSlice {
   socket: WebSocket | null;
-  wsMessages: any[];
+  wsMessages: WebSocketMessage[];
   reconnectAttempts: number;
   maxReconnectAttempts: number;
   reconnectInterval: number;
@@ -94,6 +122,16 @@ export interface UploadSlice {
   clearUploadState: (conversationId: string) => void;
 }
 
+export interface SubscriptionProduct {
+  productId: string;
+  title: string;
+  description: string;
+  price: string;
+  subscriptionOfferDetails?: {
+    offerToken: string;
+  }[];
+}
+
 export type StoreState = AuthSlice &
   ConversationSlice &
   UploadSlice &
@@ -105,5 +143,5 @@ export interface StoreActions {
   getUserProfile: () => Promise<User | null>;
 }
 
-export const API_BASE_URL = "https://v.bkk.lol/api/v1";
+export const API_BASE_URL = "https://v.bkk.lol";
 export const WS_URL = "ws://v.bkk.lol/ws";

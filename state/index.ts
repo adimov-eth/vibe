@@ -26,6 +26,7 @@ const useStore = create<StoreState>()(
           conversations: state.conversations,
           subscriptionStatus: state.subscriptionStatus,
           usageStats: state.usageStats,
+          subscriptionProducts: state.subscriptionProducts,
         }),
       }
     )
