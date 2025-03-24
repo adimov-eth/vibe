@@ -6,7 +6,7 @@ import useStore from '@/state';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import { useRouter } from 'expo-router';
 import React, { useEffect } from 'react';
-import { ActivityIndicator, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, SafeAreaView, ScrollView, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
 
 export default function Profile() {
   const router = useRouter();
@@ -231,19 +231,19 @@ export default function Profile() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.background,
-  },
+    backgroundColor: colors.background.primary,
+  } as ViewStyle,
   container: {
     flex: 1,
-    backgroundColor: colors.background,
-  },
+    backgroundColor: colors.background.primary,
+  } as ViewStyle,
   contentContainer: {
     padding: spacing.lg,
-  },
+  } as ViewStyle,
   profileHeader: {
     alignItems: 'center',
     marginVertical: spacing.xl,
-  },
+  } as ViewStyle,
   avatarContainer: {
     width: 80,
     height: 80,
@@ -252,106 +252,106 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: spacing.md,
-    ...layout.cardShadow,
-  },
+    ...layout.shadows.small,
+  } as ViewStyle,
   avatarText: {
     fontSize: 32,
-    color: colors.white,
+    color: colors.text.inverse,
     fontFamily: 'Inter-Bold',
-  },
+  } as TextStyle,
   userName: {
     ...typography.heading2,
     marginBottom: spacing.xs,
-  },
+  } as TextStyle,
   userEmail: {
     ...typography.body1,
-    color: colors.mediumText,
-  },
+    color: colors.text.secondary,
+  } as TextStyle,
   section: {
     marginBottom: spacing.xl,
-  },
+  } as ViewStyle,
   sectionTitle: {
     ...typography.heading3,
     marginBottom: spacing.md,
-  },
+  } as TextStyle,
   card: {
-    backgroundColor: colors.cardBackground,
-    borderRadius: layout.borderRadius.medium,
+    backgroundColor: colors.background.surface,
+    borderRadius: layout.borderRadius.lg,
     padding: spacing.lg,
-    ...layout.cardShadow,
-  },
+    ...layout.shadows.small,
+  } as ViewStyle,
   button: {
     marginBottom: spacing.md,
-  },
+  } as ViewStyle,
   buttonContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: spacing.sm,
-  },
+  } as ViewStyle,
   buttonLabel: {
     ...typography.body2,
     flex: 1,
     marginRight: spacing.md,
-  },
+  } as TextStyle,
   subscriptionStatusContainer: {
     marginBottom: spacing.lg,
-  },
+  } as ViewStyle,
   subscriptionInfo: {
     marginBottom: spacing.md,
-  },
+  } as ViewStyle,
   subscriptionLabel: {
     ...typography.caption,
-    color: colors.mediumText,
+    color: colors.text.secondary,
     marginBottom: spacing.xs,
-  },
+  } as TextStyle,
   subscriptionStatus: {
     ...typography.heading3,
     fontWeight: '600',
-  },
+  } as TextStyle,
   statusPremium: {
-    color: colors.success,
-  },
+    color: colors.status.success,
+  } as TextStyle,
   statusFree: {
     color: colors.primary,
-  },
+  } as TextStyle,
   subscriptionValue: {
     ...typography.body1,
-  },
+  } as TextStyle,
   resetDateText: {
     ...typography.caption,
-    color: colors.mediumText,
+    color: colors.text.secondary,
     marginTop: spacing.xs,
-  },
+  } as TextStyle,
   devContainer: {
     marginTop: spacing.md,
     paddingTop: spacing.md,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-  },
+  } as ViewStyle,
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-  },
+  } as ViewStyle,
   loadingText: {
     ...typography.body1,
-    color: colors.mediumText,
+    color: colors.text.secondary,
     marginTop: spacing.md,
-  },
+  } as TextStyle,
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.lg,
-  },
+  } as ViewStyle,
   errorText: {
     ...typography.body1,
     color: colors.error,
     textAlign: 'center',
     marginBottom: spacing.md,
-  },
+  } as TextStyle,
   retryButton: {
     minWidth: 120,
-  },
+  } as ViewStyle,
 });

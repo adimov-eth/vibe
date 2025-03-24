@@ -137,7 +137,6 @@ export default function Recording() {
               <RecordButton
                 isRecording={isRecording}
                 onPress={handleToggleRecording}
-                disabled={isUploading}
               />
               <Text style={styles.recordingInstructions}>
                 {isRecording ? 'Recording... Tap to stop' : 'Tap to start recording'}
