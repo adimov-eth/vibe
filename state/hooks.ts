@@ -1,70 +1,67 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import useStore from "./index";
 
 export const useAuth = () => {
   const store = useStore();
-
   const login = useCallback(async () => {
     try {
       store.setError(null);
       const token = await store.fetchToken();
-      if (token) {
-        await store.getUserProfile();
-      }
+      if (token) await store.getUserProfile();
       return token;
     } catch (error) {
-      store.setError((error as Error).message);
+      store.setError(error instanceof Error ? error.message : "Login failed");
       return null;
     }
   }, [store]);
-
   const logout = useCallback(async () => {
     await store.logout();
   }, [store]);
-
   return {
     token: store.token,
     user: store.userProfile,
-    isLoading: store.isLoading,
+    authLoading: store.authLoading,
     error: store.error,
     login,
     logout,
   };
 };
 
-// Access conversation directly from store
 export const useConversation = (conversationId: string) => {
-  const { conversations, getConversation, isLoading, error } = useStore();
+  const { conversations, conversationLoading, getConversation, error } = useStore();
   const conversation = conversations[conversationId];
+  const isLoading = conversationLoading[conversationId] || false;
 
-  // Fetch conversation if not in state
-  useCallback(() => {
-    if (!conversation && conversationId) {
-      getConversation(conversationId);
+  useEffect(() => {
+    if (!conversation && conversationId && !isLoading) {
+      getConversation(conversationId).catch(() => {}); // Handle error in component if needed
     }
-  }, [conversation, conversationId, getConversation]);
+  }, [conversation, conversationId, isLoading, getConversation]);
 
-  return {
-    conversation,
-    isLoading,
-    isError: error,
-  };
+  return { conversation, isLoading, isError: !!error };
 };
 
-// Access user profile directly from store
 export const useUserProfile = () => {
-  const { userProfile, getUserProfile, isLoading, error } = useStore();
+  const { userProfile, getUserProfile, authLoading, error } = useStore();
 
-  // Fetch profile if not in state
-  useCallback(() => {
-    if (!userProfile) {
-      getUserProfile();
+  useEffect(() => {
+    if (!userProfile && !authLoading) {
+      getUserProfile().catch(() => {}); // Handle error in component if needed
     }
-  }, [userProfile, getUserProfile]);
+  }, [userProfile, authLoading, getUserProfile]);
 
-  return {
-    user: userProfile,
-    isLoading,
-    isError: error,
-  };
+  return { user: userProfile, isLoading: authLoading, isError: !!error };
+};
+
+export const useWebSocket = () => {
+  const { socket, wsMessages, connectWebSocket, subscribeToConversation, clearMessages } =
+    useStore();
+
+  useEffect(() => {
+    if (!socket) {
+      connectWebSocket().catch(() => {}); // Handle error in component if needed
+    }
+  }, [socket, connectWebSocket]);
+
+  return { socket, messages: wsMessages, subscribeToConversation, clearMessages };
 };

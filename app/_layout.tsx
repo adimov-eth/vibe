@@ -27,16 +27,11 @@ const tokenCache = {
 SplashScreen.preventAutoHideAsync();
 
 function AuthProvider({ children }: { children: React.ReactNode }) {
-  const { login, isLoading } = useAuth();
-
+  const { login, authLoading } = useAuth();
   useEffect(() => {
     login();
   }, [login]);
-
-  if (isLoading) {
-    return null;
-  }
-
+  if (authLoading) return null;
   return <>{children}</>;
 }
 

@@ -1,4 +1,3 @@
-// User types
 export interface User {
   id: string;
   firstName: string;
@@ -7,26 +6,21 @@ export interface User {
   profileImageUrl: string;
 }
 
-// Conversation types
 export interface Conversation {
   id: string;
-  status: 'waiting' | 'active' | 'completed';
-  mode: 'mediator' | 'counselor';
-  recordingType: 'separate' | 'live';
+  status: "waiting" | "active" | "completed";
+  mode: "mediator" | "counselor";
+  recordingType: "separate" | "live";
 }
 
-// Upload types
 export interface UploadProgress {
-  [key: string]: number;
+  [key: string]: number; // uploadId = `${serverConversationId}_${audioKey}`
 }
 
-export interface UploadResult {
-  success: boolean;
-  url?: string;
-  error?: string;
-}
+export type UploadResult =
+  | { success: true; url: string }
+  | { success: false; error: string; audioUri: string; conversationId: string; audioKey: string };
 
-// Subscription types
 export interface SubscriptionStatus {
   active: boolean;
   plan: string;
@@ -39,11 +33,10 @@ export interface UsageStats {
   remainingMinutes: number;
 }
 
-// Store types
 export interface AuthSlice {
   token: string | null;
   userProfile: User | null;
-  isLoading: boolean;
+  authLoading: boolean;
   error: string | null;
   setError: (error: string | null) => void;
   fetchToken: () => Promise<string | null>;
@@ -53,14 +46,13 @@ export interface AuthSlice {
 
 export interface ConversationSlice {
   conversations: Record<string, Conversation>;
-  createConversation: (mode: string, recordingType: string) => Promise<string>;
+  conversationLoading: Record<string, boolean>;
+  createConversation: (
+    mode: string,
+    recordingType: "separate" | "live",
+    localConversationId: string
+  ) => Promise<string>;
   getConversation: (conversationId: string) => Promise<Conversation>;
-}
-
-export interface UploadSlice {
-  uploadProgress: UploadProgress;
-  uploadResults: Record<string, UploadResult>;
-  uploadAudio: (audioUri: string, conversationId: string) => void;
 }
 
 export interface SubscriptionSlice {
@@ -74,15 +66,38 @@ export interface SubscriptionSlice {
 export interface WebSocketSlice {
   socket: WebSocket | null;
   wsMessages: any[];
+  reconnectAttempts: number;
+  maxReconnectAttempts: number;
+  reconnectInterval: number;
+  maxReconnectDelay: number;
+  calculateBackoff: () => number;
   connectWebSocket: () => Promise<void>;
   subscribeToConversation: (conversationId: string) => void;
+  clearMessages: () => void;
 }
 
-// Combined store type
-export type StoreState = AuthSlice & 
-  ConversationSlice & 
-  UploadSlice & 
-  SubscriptionSlice & 
+export interface PendingUpload {
+  localConversationId: string;
+  audioUri: string;
+  audioKey: string; // e.g., "1" or "2" to distinguish audio files
+}
+
+export interface UploadSlice {
+  uploadProgress: UploadProgress;
+  uploadResults: { [uploadId: string]: UploadResult };
+  pendingUploads: PendingUpload[];
+  localToServerIds: { [localConversationId: string]: string };
+  uploadAudio: (audioUri: string, conversationId: string, audioKey: string) => Promise<void>;
+  addPendingUpload: (localConversationId: string, audioUri: string, audioKey: string) => void;
+  processPendingUploads: (localConversationId: string) => void;
+  setLocalToServerId: (localId: string, serverId: string) => void;
+  clearUploadState: (conversationId: string) => void;
+}
+
+export type StoreState = AuthSlice &
+  ConversationSlice &
+  UploadSlice &
+  SubscriptionSlice &
   WebSocketSlice;
 
 export interface StoreActions {
@@ -90,6 +105,5 @@ export interface StoreActions {
   getUserProfile: () => Promise<User | null>;
 }
 
-// API Configuration
-export const API_BASE_URL = 'https://your-server-domain/api/v1';
-export const WS_URL = 'ws://your-server-domain/ws'; 
+export const API_BASE_URL = "https://v.bkk.lol/api/v1";
+export const WS_URL = "ws://v.bkk.lol/ws";

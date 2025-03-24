@@ -22,10 +22,10 @@ const useStore = create<StoreState>()(
         name: "vibecheck-storage",
         storage: createJSONStorage(() => AsyncStorage),
         partialize: (state) => ({
-          userProfile: state.userProfile, // Persist user profile
-          conversations: state.conversations, // Persist conversation data
-          subscriptionStatus: state.subscriptionStatus, // Persist subscription status
-          usageStats: state.usageStats, // Persist usage stats
+          userProfile: state.userProfile,
+          conversations: state.conversations,
+          subscriptionStatus: state.subscriptionStatus,
+          usageStats: state.usageStats,
         }),
       }
     )
