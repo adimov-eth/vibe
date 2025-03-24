@@ -1,19 +1,22 @@
+import { ErrorMessage } from "@/components/feedback/ErrorMessage";
 import { FormField } from "@/components/forms/FormField";
 import { PasswordInput } from "@/components/forms/PasswordInput";
 import { Container } from "@/components/layout/Container";
 import { Button } from "@/components/ui/Button";
+import { showToast } from "@/components/ui/Toast";
 import { colors, spacing, typography } from "@/constants/styles";
 import { signInSchema, type SignInFormData } from "@/validations/auth";
 import { useSignIn } from "@clerk/clerk-expo";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link, useRouter } from "expo-router";
-import React from "react";
+import React, { useState } from "react";
 import { Controller, SubmitHandler, useForm } from "react-hook-form";
 import { StyleSheet, Text, View } from "react-native";
 
 export default function SignIn() {
   const router = useRouter();
   const { signIn, setActive, isLoaded } = useSignIn();
+  const [error, setError] = useState<string | null>(null);
 
   const {
     control,
@@ -29,6 +32,7 @@ export default function SignIn() {
 
   const onSubmit: SubmitHandler<SignInFormData> = async (data) => {
     if (!isLoaded || !signIn) return;
+    setError(null);
 
     try {
       // Start the sign-in process using email and password
@@ -41,18 +45,19 @@ export default function SignIn() {
       if (signInAttempt.status === "complete") {
         // Set the active session
         await setActive({ session: signInAttempt.createdSessionId });
+        showToast.success("Success", "Signed in successfully");
         router.replace("../home");
       } else {
         // User needs to complete additional steps
-        console.error(JSON.stringify(signInAttempt, null, 2));
+        console.error("Sign in incomplete:", JSON.stringify(signInAttempt, null, 2));
         throw new Error(`Sign in failed: ${signInAttempt.status}`);
       }
     } catch (err) {
-      if (err instanceof Error) {
-        throw new Error(err.message || "Failed to sign in");
-      } else {
-        throw new Error("An unexpected error occurred");
-      }
+      console.error("Sign in failed:", err);
+      const errorMsg = err instanceof Error ? 
+        err.message : "Failed to sign in. Please check your credentials and try again.";
+      setError(errorMsg);
+      showToast.error("Error", errorMsg);
     }
   };
 
@@ -62,6 +67,8 @@ export default function SignIn() {
         <Text style={styles.title}>Welcome back</Text>
         <Text style={styles.subtitle}>Log in to your account</Text>
       </View>
+
+      {error && <ErrorMessage message={error} testID="auth-error" />}
 
       <Controller
         control={control}

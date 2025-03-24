@@ -1,11 +1,12 @@
 import { ModeCard } from '@/components/conversation/ModeCard';
 import { AppBar } from '@/components/layout/AppBar';
 import { Container } from '@/components/layout/Container';
+import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography } from '@/constants/styles';
-import useStore from '@/state';
+import { useUsage } from '@/hooks/useUsage';
 import { useRouter } from 'expo-router';
-import React, { useEffect } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React from 'react';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 // Define the available conversation modes
 const CONVERSATION_MODES = [
@@ -40,25 +41,17 @@ export default function Home() {
   const { 
     subscriptionStatus,
     usageStats,
-    checkSubscriptionStatus,
-    getUsageStats
-  } = useStore();
-
-  // Fetch subscription and usage data on mount
-  useEffect(() => {
-    checkSubscriptionStatus().catch(console.error);
-    getUsageStats().catch(console.error);
-  }, [checkSubscriptionStatus, getUsageStats]);
-
-  // Loading state - when both subscription and usage stats are null
-  const isLoading = !subscriptionStatus && !usageStats;
-  
-  // Error state - when either subscription or usage stats failed to load
-  const error = !subscriptionStatus || !usageStats;
+    isLoading,
+    error,
+    checkCanCreateConversation
+  } = useUsage();
 
   // Navigate to mode details screen
-  const handleSelectMode = (mode: typeof CONVERSATION_MODES[0]) => {
-    router.push(`./${mode.id}`);
+  const handleSelectMode = async (mode: typeof CONVERSATION_MODES[0]) => {
+    const canCreate = await checkCanCreateConversation();
+    if (canCreate) {
+      router.push(`./${mode.id}`);
+    }
   };
 
   // Loading state
@@ -80,7 +73,13 @@ export default function Home() {
       <Container withSafeArea>
         <AppBar title="VibeCheck" />
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>Failed to load subscription data</Text>
+          <Text style={styles.errorText}>{error.message || 'Failed to load subscription data'}</Text>
+          <Button 
+            title="Retry" 
+            variant="primary"
+            onPress={() => checkCanCreateConversation(false)}
+            style={styles.retryButton}
+          />
         </View>
       </Container>
     );
@@ -93,6 +92,13 @@ export default function Home() {
       <ScrollView 
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={() => checkCanCreateConversation(false)}
+            colors={[colors.primary]}
+          />
+        }
       >
         <View style={styles.headerContainer}>
           <Text style={styles.headerSubtitle}>
@@ -203,5 +209,9 @@ const styles = StyleSheet.create({
     ...typography.body1,
     color: colors.error,
     textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: spacing.md,
+    minWidth: 120,
   },
 });

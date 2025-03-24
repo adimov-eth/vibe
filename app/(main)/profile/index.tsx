@@ -1,17 +1,24 @@
 import { AppBar } from '@/components/layout/AppBar';
 import { Button } from '@/components/ui/Button';
 import { colors, layout, spacing, typography } from '@/constants/styles';
+import { useUsage } from '@/hooks/useUsage';
 import useStore from '@/state';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import { useRouter } from 'expo-router';
 import React, { useEffect } from 'react';
-import { SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 export default function Profile() {
   const router = useRouter();
   const { user } = useUser();
   const { signOut } = useAuth();
   const store = useStore();
+  const { 
+    subscriptionStatus,
+    usageStats,
+    isLoading,
+    error 
+  } = useUsage();
 
   useEffect(() => {
     store.checkSubscriptionStatus().catch(() => {});
@@ -23,21 +30,72 @@ export default function Profile() {
   const navigateToUpdatePassword = () => router.push('./update-password');
   const navigateToPaywall = () => router.push('./paywall');
 
-  const isSubscribed = store.subscriptionStatus?.active ?? false;
-  const subscriptionPlan = store.subscriptionStatus?.plan ?? 'none';
-  const expiryDate = store.subscriptionStatus?.expiresAt;
-  const remainingConversations = store.usageStats?.remainingMinutes ?? 0;
-  const currentUsage = store.usageStats?.totalMinutes || 0;
-  const usageLimit = store.usageStats ? 
-    (store.usageStats.totalMinutes + store.usageStats.remainingMinutes) : 0;
+  const isSubscribed = subscriptionStatus?.active ?? false;
+  const subscriptionPlan = subscriptionStatus?.plan ?? 'none';
+  const expiryDate = subscriptionStatus?.expiresAt;
+  const remainingConversations = usageStats?.remainingMinutes ?? 0;
+  const currentUsage = usageStats?.totalMinutes || 0;
+  const usageLimit = usageStats ? 
+    (usageStats.totalMinutes + usageStats.remainingMinutes) : 0;
   
-  // Calculate reset date as 30 days from subscription start or last reset
+  // Format the reset date based on the subscription expiry date
   const getFormattedResetDate = () => {
     if (!expiryDate) return 'Unknown';
-    const resetDate = new Date(expiryDate);
-    resetDate.setDate(resetDate.getDate() - 30); // Show next reset date
-    return resetDate.toLocaleDateString();
+    
+    const now = new Date();
+    const expiry = new Date(expiryDate);
+    
+    // If expired, show as "Unknown"
+    if (expiry < now) {
+      return 'Unknown';
+    }
+    
+    // Format the expiry date
+    return expiry.toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
   };
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <AppBar 
+          title="Profile" 
+          showBackButton={true} 
+          onBackPress={handleBackPress} 
+        />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading profile...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <AppBar 
+          title="Profile" 
+          showBackButton={true} 
+          onBackPress={handleBackPress} 
+        />
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error.message || 'Failed to load profile data'}</Text>
+          <Button 
+            title="Retry" 
+            variant="primary"
+            onPress={() => router.replace('/profile')}
+            style={styles.retryButton}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -270,5 +328,30 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    ...typography.body1,
+    color: colors.mediumText,
+    marginTop: spacing.md,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  errorText: {
+    ...typography.body1,
+    color: colors.error,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+  retryButton: {
+    minWidth: 120,
   },
 });
