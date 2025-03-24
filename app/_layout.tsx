@@ -1,11 +1,15 @@
-import { useFonts } from 'expo-font';
+import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
 import { Stack } from 'expo-router';
 import * as SecureStore from "expo-secure-store";
 import * as SplashScreen from 'expo-splash-screen';
+import { StatusBar } from 'expo-status-bar';
 import React, { useEffect } from 'react';
+import { View } from 'react-native';
 import 'react-native-reanimated';
-import { useAuth } from '../state/hooks';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { ToastProvider } from "../components/ui/Toast";
 
+// Token cache implementation for Clerk
 const tokenCache = {
   async getToken(key: string) {
     try {
@@ -26,36 +30,47 @@ const tokenCache = {
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
-function AuthProvider({ children }: { children: React.ReactNode }) {
-  const { login, authLoading } = useAuth();
-  useEffect(() => {
-    login();
-  }, [login]);
-  if (authLoading) return null;
-  return <>{children}</>;
-}
-
-export default function RootLayout() {
-  const [loaded] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  });
+const NavigationLayout = () => {
+  const { isLoaded } = useAuth();
 
   useEffect(() => {
-    if (loaded) {
+    if (isLoaded) {
       SplashScreen.hideAsync();
     }
-  }, [loaded]);
+  }, [isLoaded]);
 
-  if (!loaded) {
+  if (!isLoaded) {
     return null;
   }
 
   return (
-    <AuthProvider>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
-      </Stack>
-    </AuthProvider>
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: "#FFFFFF" },
+      }}
+    >
+      <Stack.Screen name="(main)" options={{ headerShown: false }} />
+      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+      <Stack.Screen name="verify-email" options={{ headerShown: false }} />
+      <Stack.Screen name="index" options={{ headerShown: false }} />
+    </Stack>
+  );
+};
+
+export default function RootLayout() {
+  return (
+    <ClerkProvider
+      publishableKey={process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!}
+      tokenCache={tokenCache}
+    >
+      <SafeAreaProvider>
+        <StatusBar style="auto" />
+        <View style={{ flex: 1 }}>
+          <NavigationLayout />
+          <ToastProvider />
+        </View>
+      </SafeAreaProvider>
+    </ClerkProvider>
   );
 }
