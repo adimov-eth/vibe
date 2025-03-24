@@ -105,9 +105,10 @@ export interface WebSocketSlice {
 }
 
 export interface PendingUpload {
-  localConversationId: string;
   audioUri: string;
-  audioKey: string; // e.g., "1" or "2" to distinguish audio files
+  conversationId: string;
+  audioKey: string;
+  localConversationId?: string;  // Making this optional since it's not always needed
 }
 
 export interface UploadSlice {

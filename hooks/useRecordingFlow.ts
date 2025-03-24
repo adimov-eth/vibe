@@ -1,4 +1,5 @@
 import { Audio } from "expo-av";
+import * as FileSystem from "expo-file-system";
 import { useEffect, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import useStore from "../state/index";
@@ -19,9 +20,60 @@ export const useRecordingFlow = ({ modeId, onComplete }: UseRecordingFlowProps) 
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recordingObject, setRecordingObject] = useState<Audio.Recording | null>(null);
+  const [permissionStatus, setPermissionStatus] = useState<Audio.PermissionStatus | null>(null);
 
   const { checkCanCreateConversation } = useUsage();
   const store = useStore();
+
+  // Check and request permissions
+  const checkPermissions = async (): Promise<boolean> => {
+    try {
+      const { status: currentStatus } = await Audio.getPermissionsAsync();
+      setPermissionStatus(currentStatus);
+      
+      if (currentStatus !== 'granted') {
+        const { status: newStatus } = await Audio.requestPermissionsAsync();
+        setPermissionStatus(newStatus);
+        return newStatus === 'granted';
+      }
+      
+      return true;
+    } catch (err) {
+      console.error('Permission check failed:', err);
+      setError('Failed to check microphone permissions');
+      return false;
+    }
+  };
+
+  // Enhanced cleanup function
+  const cleanup = async () => {
+    try {
+      if (recordingObject) {
+        if (isRecording) {
+          await recordingObject.stopAndUnloadAsync();
+        }
+        await recordingObject._cleanupForUnloadedRecorder();
+      }
+    } catch (err) {
+      console.error('Cleanup failed:', err);
+    } finally {
+      setRecordingObject(null);
+      setIsRecording(false);
+      
+      // Clean up any temporary recording files
+      recordings.forEach(async (uri) => {
+        try {
+          const fileInfo = await FileSystem.getInfoAsync(uri);
+          if (fileInfo.exists) {
+            await FileSystem.deleteAsync(uri, { idempotent: true });
+          }
+        } catch (err) {
+          console.error('Failed to delete recording file:', err);
+        }
+      });
+      setRecordings([]);
+    }
+  };
 
   // Toggle recording mode
   const handleToggleMode = (index: number) => {
@@ -32,10 +84,9 @@ export const useRecordingFlow = ({ modeId, onComplete }: UseRecordingFlowProps) 
     setError(null);
   };
 
-  // Start/stop recording
+  // Start/stop recording with enhanced error handling
   const handleToggleRecording = async () => {
     if (isRecording) {
-      // Stop recording
       try {
         await recordingObject?.stopAndUnloadAsync();
         const uri = recordingObject?.getURI();
@@ -58,9 +109,9 @@ export const useRecordingFlow = ({ modeId, onComplete }: UseRecordingFlowProps) 
       } catch (err) {
         setError('Failed to stop recording');
         console.error(err);
+        await cleanup();
       }
     } else {
-      // Start recording
       try {
         const canCreate = await checkCanCreateConversation(false);
         if (!canCreate) {
@@ -68,15 +119,21 @@ export const useRecordingFlow = ({ modeId, onComplete }: UseRecordingFlowProps) 
           return;
         }
 
+        const hasPermission = await checkPermissions();
+        if (!hasPermission) {
+          setError('Microphone permission denied');
+          return;
+        }
+
         if (recordings.length === 0) {
           await store.createConversation(modeId, recordMode, localId);
         }
 
-        const { status } = await Audio.requestPermissionsAsync();
-        if (status !== 'granted') throw new Error('Permission denied');
-
         const recording = new Audio.Recording();
-        await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+        await recording.prepareToRecordAsync({
+          ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+          keepAudioActiveHint: true, // Prevent system sleep during recording
+        });
         await recording.startAsync();
         setRecordingObject(recording);
         setIsRecording(true);
@@ -84,6 +141,7 @@ export const useRecordingFlow = ({ modeId, onComplete }: UseRecordingFlowProps) 
       } catch (err) {
         setError('Failed to start recording');
         console.error(err);
+        await cleanup();
       }
     }
   };
@@ -103,14 +161,29 @@ export const useRecordingFlow = ({ modeId, onComplete }: UseRecordingFlowProps) 
     }
   }, [store.localToServerIds, store.uploadResults, localId, recordMode, isUploading, onComplete]);
 
-  // Cleanup function
-  const cleanup = async () => {
-    if (recordingObject && isRecording) {
-      await recordingObject.stopAndUnloadAsync();
-    }
-    setRecordingObject(null);
-    setIsRecording(false);
-  };
+  // Monitor permission changes
+  useEffect(() => {
+    const checkCurrentPermission = async () => {
+      const { status } = await Audio.getPermissionsAsync();
+      if (status !== permissionStatus) {
+        setPermissionStatus(status);
+        if (status !== 'granted' && isRecording) {
+          setError('Microphone permission revoked');
+          await cleanup();
+        }
+      }
+    };
+
+    const interval = setInterval(checkCurrentPermission, 1000);
+    return () => clearInterval(interval);
+  }, [permissionStatus, isRecording]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      cleanup().catch(console.error);
+    };
+  }, []);
 
   return {
     recordMode,

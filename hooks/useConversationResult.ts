@@ -23,7 +23,8 @@ export const useConversationResult = (conversationId: string) => {
     socket, 
     connectWebSocket, 
     subscribeToConversation,
-    clearMessages 
+    clearMessages,
+    clearUploadState,
   } = useStore();
 
   // Connect to WebSocket and subscribe to conversation updates
@@ -46,7 +47,7 @@ export const useConversationResult = (conversationId: string) => {
     };
   }, [conversationId, socket, connectWebSocket, subscribeToConversation, clearMessages]);
 
-  // Process WebSocket messages
+  // Process WebSocket messages and handle cleanup
   useEffect(() => {
     const relevantMessages = wsMessages.filter(
       msg => msg.payload.conversationId === conversationId
@@ -66,25 +67,29 @@ export const useConversationResult = (conversationId: string) => {
     };
 
     // Process messages in order
-    relevantMessages.forEach((msg: WebSocketMessage, index: number) => {
+    relevantMessages.forEach((msg: WebSocketMessage) => {
       switch (msg.type) {
         case 'transcript':
           result.transcript = msg.payload.content;
-          result.progress = Math.min(50, Math.round((index + 1) / relevantMessages.length * 100));
+          result.progress = Math.min(50, Math.round((relevantMessages.length / 2) * 100));
           break;
         case 'analysis':
           result.analysis = msg.payload.content;
-          result.progress = Math.min(100, 50 + Math.round((index + 1) / relevantMessages.length * 50));
+          result.progress = Math.min(100, 50 + Math.round((relevantMessages.length / 2) * 100));
           break;
         case 'error':
           result.status = 'error';
           result.error = msg.payload.error;
           result.progress = 100;
+          // Clean up on error
+          clearUploadState(conversationId);
           break;
         case 'status':
           if (msg.payload.status === 'completed') {
             result.status = 'completed';
             result.progress = 100;
+            // Clean up on completion
+            clearUploadState(conversationId);
           }
           break;
       }
@@ -92,7 +97,16 @@ export const useConversationResult = (conversationId: string) => {
 
     setData(result);
     setIsLoading(false);
-  }, [wsMessages, conversationId]);
+  }, [wsMessages, conversationId, clearUploadState]);
+
+  // Cleanup on unmount if we haven't received a result
+  useEffect(() => {
+    return () => {
+      if (data?.status === 'processing') {
+        clearUploadState(conversationId);
+      }
+    };
+  }, [conversationId, data?.status, clearUploadState]);
 
   const refetch = async () => {
     setIsLoading(true);
