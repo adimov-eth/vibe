@@ -101,7 +101,7 @@ export const createSubscriptionSlice: StateCreator<
       try {
         console.log("[Store] Checking subscription status...");
         const token = await getAuthToken();
-        console.log("[Store] Auth token obtained, making API request");
+        console.log("[Store] Auth token obtained, making API request: ", token);
 
         const response = await fetch(`${API_BASE_URL}/subscriptions/status`, {
           headers: { Authorization: `Bearer ${token}` },

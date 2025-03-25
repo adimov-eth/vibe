@@ -91,6 +91,7 @@ export interface WebSocketSlice {
   maxReconnectAttempts: number;
   reconnectInterval: number;
   maxReconnectDelay: number;
+  isConnecting: boolean;
   calculateBackoff: () => number;
   connectWebSocket: () => Promise<void>;
   subscribeToConversation: (conversationId: string) => void;

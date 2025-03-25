@@ -2,7 +2,6 @@ import { AppBar } from '@/components/layout/AppBar';
 import { Button } from '@/components/ui/Button';
 import { colors, layout, spacing, typography } from '@/constants/styles';
 import { useUsage } from '@/hooks/useUsage';
-import useStore from '@/state';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import { useRouter } from 'expo-router';
 import React, { useEffect } from 'react';
@@ -12,18 +11,30 @@ export default function Profile() {
   const router = useRouter();
   const { user } = useUser();
   const { signOut } = useAuth();
-  const store = useStore();
   const { 
     subscriptionStatus,
     usageStats,
     loading,
-    error 
+    error,
+    loadData 
   } = useUsage();
 
   useEffect(() => {
-    store.checkSubscriptionStatus().catch(() => {});
-    store.getUsageStats().catch(() => {});
-  }, [store]);
+    const fetchData = async () => {
+      try {
+        // Only fetch if we don't have the data already
+        if (!subscriptionStatus || !usageStats) {
+          await Promise.all([
+            loadData()
+          ]);
+        }
+      } catch (err) {
+        console.error('[Profile] Failed to fetch data:', err);
+      }
+    };
+    
+    fetchData();
+  }, []); // Only run on mount
 
   const handleBackPress = () => router.back();
   const handleSignOut = async () => await signOut();

@@ -25,6 +25,37 @@ export const useRecordingFlow = ({ modeId, onComplete }: UseRecordingFlowProps) 
   const { checkCanCreateConversation } = useUsage();
   const store = useStore();
 
+  // Set up audio mode
+  useEffect(() => {
+    const setupAudio = async () => {
+      try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false,
+        });
+      } catch (err) {
+        console.error('Failed to set audio mode:', err);
+        setError('Failed to initialize audio recording');
+      }
+    };
+
+    setupAudio();
+
+    // Cleanup audio mode on unmount
+    return () => {
+      Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: false,
+        staysActiveInBackground: false,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      }).catch(console.error);
+    };
+  }, []);
+
   // Check and request permissions
   const checkPermissions = async (): Promise<boolean> => {
     try {
@@ -132,7 +163,19 @@ export const useRecordingFlow = ({ modeId, onComplete }: UseRecordingFlowProps) 
         const recording = new Audio.Recording();
         await recording.prepareToRecordAsync({
           ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
-          keepAudioActiveHint: true, // Prevent system sleep during recording
+          android: {
+            ...Audio.RecordingOptionsPresets.HIGH_QUALITY.android,
+            extension: '.m4a',
+            outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+            audioEncoder: Audio.AndroidAudioEncoder.AAC,
+          },
+          ios: {
+            ...Audio.RecordingOptionsPresets.HIGH_QUALITY.ios,
+            extension: '.m4a',
+            outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
+            audioQuality: Audio.IOSAudioQuality.MAX,
+          },
+          keepAudioActiveHint: true,
         });
         await recording.startAsync();
         setRecordingObject(recording);
@@ -179,7 +222,7 @@ export const useRecordingFlow = ({ modeId, onComplete }: UseRecordingFlowProps) 
       const interval = setInterval(checkCurrentPermission, 1000);
       return () => clearInterval(interval);
     }
-  }, [permissionStatus, isRecording, cleanup]);
+  }, [permissionStatus, isRecording]);
 
   // Cleanup on unmount - using useCallback to stabilize the cleanup function
   const stableCleanup = useCallback(async () => {

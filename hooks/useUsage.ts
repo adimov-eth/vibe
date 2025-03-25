@@ -1,29 +1,42 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
 import useStore from "../state";
 import { formatDate } from "../utils/date";
 
 export const useUsage = () => {
-  const { getUsageStats, usageStats, subscriptionStatus } = useStore();
+  const { getUsageStats, checkSubscriptionStatus, usageStats, subscriptionStatus } = useStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [hasShownWelcome, setHasShownWelcome] = useState(false);
+  const loadingRef = useRef(false);
 
   const loadData = useCallback(async () => {
+    // Prevent concurrent calls
+    if (loadingRef.current) return;
+    
     setLoading(true);
+    loadingRef.current = true;
     setError(null);
+    
     try {
-      await getUsageStats();
+      await Promise.all([
+        getUsageStats(),
+        checkSubscriptionStatus()
+      ]);
     } catch (err) {
       setError(err as Error);
     } finally {
       setLoading(false);
+      loadingRef.current = false;
     }
-  }, [getUsageStats]);
+  }, [getUsageStats, checkSubscriptionStatus]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    // Only load if we don't have the data
+    if (!usageStats || !subscriptionStatus) {
+      loadData();
+    }
+  }, [loadData, usageStats, subscriptionStatus]);
 
   const checkCanCreateConversation = useCallback(() => {
     if (!usageStats) {

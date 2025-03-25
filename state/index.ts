@@ -24,13 +24,7 @@ const useStore = create<StoreState>()(
           subscriptionStatus: state.subscriptionStatus,
           usageStats: state.usageStats,
           subscriptionProducts: state.subscriptionProducts,
-        }),
-        onRehydrateStorage: () => (state) => {
-          // Fetch fresh usage stats when store is rehydrated
-          if (state) {
-            state.getUsageStats().catch(console.error);
-          }
-        },
+        })
       }
     )
   )
