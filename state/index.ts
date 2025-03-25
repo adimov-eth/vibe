@@ -24,7 +24,9 @@ const useStore = create<StoreState>()(
           subscriptionStatus: state.subscriptionStatus,
           usageStats: state.usageStats,
           subscriptionProducts: state.subscriptionProducts,
-        })
+        }),
+        version: 1,
+        skipHydration: true,
       }
     )
   )

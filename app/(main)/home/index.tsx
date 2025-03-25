@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography } from '@/constants/styles';
 import { useUsage } from '@/hooks/useUsage';
 import { useRouter } from 'expo-router';
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 // Define the available conversation modes
@@ -46,10 +46,14 @@ export default function Home() {
     checkCanCreateConversation,
     loadData
   } = useUsage();
+  const initialLoadRef = useRef(false);
 
-  // Load usage stats on mount
+  // Load usage stats on mount only once
   useEffect(() => {
-    loadData();
+    if (!initialLoadRef.current) {
+      initialLoadRef.current = true;
+      loadData();
+    }
   }, [loadData]);
 
   // Navigate to mode details screen

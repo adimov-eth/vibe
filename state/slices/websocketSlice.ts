@@ -1,14 +1,34 @@
 // state/slices/websocketSlice.ts
 import { getClerkInstance } from "@clerk/clerk-expo";
 import { StateCreator } from "zustand";
-import { StoreState, WS_URL, WebSocketSlice } from "../types";
+import { immer } from "zustand/middleware/immer";
+import { StoreState, WS_URL, WebSocketMessage } from "../types";
 
-export const createWebSocketSlice: StateCreator<
-  StoreState,
-  [],
-  [],
-  WebSocketSlice
-> = (set, get) => ({
+// Initial state type
+interface WebSocketState {
+  socket: WebSocket | null;
+  wsMessages: WebSocketMessage[];
+  reconnectAttempts: number;
+  maxReconnectAttempts: number;
+  reconnectInterval: number;
+  maxReconnectDelay: number;
+  isConnecting: boolean;
+}
+
+// Actions type
+interface WebSocketActions {
+  calculateBackoff: () => number;
+  connectWebSocket: () => Promise<void>;
+  subscribeToConversation: (conversationId: string) => void;
+  unsubscribeFromConversation: (conversationId: string) => void;
+  clearMessages: () => void;
+}
+
+// Combined slice type
+export type WebSocketSlice = WebSocketState & WebSocketActions;
+
+// Initial state
+const initialState: WebSocketState = {
   socket: null,
   wsMessages: [],
   reconnectAttempts: 0,
@@ -16,44 +36,52 @@ export const createWebSocketSlice: StateCreator<
   reconnectInterval: 1000,
   maxReconnectDelay: 30000,
   isConnecting: false,
+};
+
+export const createWebSocketSlice: StateCreator<
+  StoreState,
+  [],
+  [["zustand/immer", never]],
+  WebSocketSlice
+> = immer((set, get) => ({
+  ...initialState,
 
   calculateBackoff: () => {
-    const attempts = get().reconnectAttempts;
-    const baseInterval = get().reconnectInterval;
-    const maxDelay = get().maxReconnectDelay;
+    const state = get() as WebSocketSlice;
     const exponentialDelay = Math.min(
-      Math.pow(2, attempts) * baseInterval,
-      maxDelay
+      Math.pow(2, state.reconnectAttempts) * state.reconnectInterval,
+      state.maxReconnectDelay
     );
     const jitter = exponentialDelay * 0.2 * (Math.random() - 0.5);
     return Math.floor(exponentialDelay + jitter);
   },
 
   connectWebSocket: async () => {
-    if (get().isConnecting || get().socket?.readyState === WebSocket.CONNECTING) {
+    const state = get() as WebSocketSlice;
+    if (state.isConnecting || state.socket?.readyState === WebSocket.CONNECTING) {
       console.log("WebSocket connection already in progress");
       return;
     }
 
-    if (get().reconnectAttempts >= get().maxReconnectAttempts) {
+    if (state.reconnectAttempts >= state.maxReconnectAttempts) {
       console.error("Max reconnection attempts reached");
       return;
     }
 
-    set({ isConnecting: true });
+    set((state) => { state.isConnecting = true });
 
     try {
       const token = await getClerkInstance().session?.getToken();
       if (!token) {
         console.error("No authentication token available");
-        set({ isConnecting: false });
+        set((state) => { state.isConnecting = false });
         return;
       }
 
-      const existingSocket = get().socket;
+      const existingSocket = state.socket;
       if (existingSocket && existingSocket.readyState !== WebSocket.CLOSED) {
         existingSocket.close();
-        set({ socket: null });
+        set((state) => { state.socket = null });
       }
 
       const wsUrl = new URL(WS_URL);
@@ -72,18 +100,19 @@ export const createWebSocketSlice: StateCreator<
       ws.onopen = () => {
         clearTimeout(connectionTimeout);
         console.log("WebSocket Connected");
-        set({ 
-          reconnectAttempts: 0,
-          isConnecting: false 
+        set((state) => {
+          state.reconnectAttempts = 0;
+          state.isConnecting = false;
+          state.socket = ws;
         });
       };
 
       ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
-          set((state: StoreState) => ({
-            wsMessages: [...state.wsMessages.slice(-99), message],
-          }));
+          set((state) => {
+            state.wsMessages = [...state.wsMessages.slice(-99), message];
+          });
         } catch (error) {
           console.error("Failed to parse WebSocket message:", error);
         }
@@ -92,20 +121,19 @@ export const createWebSocketSlice: StateCreator<
       ws.onclose = (event) => {
         clearTimeout(connectionTimeout);
         console.log(`WebSocket Closed: ${event.code} - ${event.reason}`);
-        set({ 
-          socket: null,
-          isConnecting: false 
+        set((state) => {
+          state.socket = null;
+          state.isConnecting = false;
         });
         
-        if (get().reconnectAttempts < get().maxReconnectAttempts && event.code !== 1000) {
-          const backoffDelay = get().calculateBackoff();
-          console.log(`Reconnecting in ${backoffDelay}ms (attempt ${get().reconnectAttempts + 1})`);
+        const currentState = get() as WebSocketSlice;
+        if (currentState.reconnectAttempts < currentState.maxReconnectAttempts && event.code !== 1000) {
+          const backoffDelay = currentState.calculateBackoff();
+          console.log(`Reconnecting in ${backoffDelay}ms (attempt ${currentState.reconnectAttempts + 1})`);
           
           setTimeout(() => {
-            set((state: StoreState) => ({
-              reconnectAttempts: state.reconnectAttempts + 1,
-            }));
-            get().connectWebSocket();
+            set((state) => { state.reconnectAttempts += 1 });
+            (get() as WebSocketSlice).connectWebSocket();
           }, backoffDelay);
         }
       };
@@ -114,18 +142,18 @@ export const createWebSocketSlice: StateCreator<
         console.error("WebSocket Error:", error);
       };
 
-      set({ socket: ws });
     } catch (error) {
       console.error("Failed to connect WebSocket:", error);
-      set((state) => ({
-        reconnectAttempts: state.reconnectAttempts + 1,
-        isConnecting: false
-      }));
+      set((state) => {
+        state.reconnectAttempts += 1;
+        state.isConnecting = false;
+      });
     }
   },
 
   subscribeToConversation: (conversationId: string) => {
-    const socket = get().socket;
+    const state = get() as WebSocketSlice;
+    const socket = state.socket;
     if (socket?.readyState === WebSocket.OPEN) {
       socket.send(
         JSON.stringify({
@@ -137,7 +165,8 @@ export const createWebSocketSlice: StateCreator<
   },
 
   unsubscribeFromConversation: (conversationId: string) => {
-    const socket = get().socket;
+    const state = get() as WebSocketSlice;
+    const socket = state.socket;
     if (socket?.readyState === WebSocket.OPEN) {
       socket.send(
         JSON.stringify({
@@ -148,5 +177,5 @@ export const createWebSocketSlice: StateCreator<
     }
   },
 
-  clearMessages: () => set({ wsMessages: [] }),
-});
+  clearMessages: () => set((state) => { state.wsMessages = [] }),
+}));
