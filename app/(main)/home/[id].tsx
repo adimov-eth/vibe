@@ -47,7 +47,7 @@ export default function ModeDetails() {
   }, [router]);
 
   const startRecording = async () => {
-    const canCreate = await checkCanCreateConversation(true);
+    const canCreate = await checkCanCreateConversation();
     if (canCreate) {
       router.push(`../recording/${mode.id}`);
     }

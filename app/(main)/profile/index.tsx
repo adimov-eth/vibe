@@ -16,7 +16,7 @@ export default function Profile() {
   const { 
     subscriptionStatus,
     usageStats,
-    isLoading,
+    loading,
     error 
   } = useUsage();
 
@@ -30,13 +30,13 @@ export default function Profile() {
   const navigateToUpdatePassword = () => router.push('./update-password');
   const navigateToPaywall = () => router.push('./paywall');
 
-  const isSubscribed = subscriptionStatus?.active ?? false;
-  const subscriptionPlan = subscriptionStatus?.plan ?? 'none';
-  const expiryDate = subscriptionStatus?.expiresAt;
-  const remainingConversations = usageStats?.remainingMinutes ?? 0;
-  const currentUsage = usageStats?.totalMinutes || 0;
+  const isSubscribed = subscriptionStatus?.isActive ?? false;
+  const subscriptionPlan = subscriptionStatus?.type ?? 'none';
+  const expiryDate = subscriptionStatus?.expiresDate;
+  const remainingConversations = usageStats?.remainingConversations ?? 0;
+  const currentUsage = usageStats?.currentUsage || 0;
   const usageLimit = usageStats ? 
-    (usageStats.totalMinutes + usageStats.remainingMinutes) : 0;
+    (usageStats.currentUsage + usageStats.remainingConversations) : 0;
   
   // Format the reset date based on the subscription expiry date
   const getFormattedResetDate = () => {
@@ -59,7 +59,7 @@ export default function Profile() {
   };
 
   // Loading state
-  if (isLoading) {
+  if (loading) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <AppBar 

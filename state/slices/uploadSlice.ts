@@ -1,9 +1,9 @@
+import { getClerkInstance } from "@clerk/clerk-expo";
 import * as BackgroundFetch from "expo-background-fetch";
 import * as FileSystem from "expo-file-system";
 import * as TaskManager from "expo-task-manager";
 import { StateCreator } from "zustand";
 import { API_BASE_URL, PendingUpload, StoreState, UploadResult } from "../types";
-
 const BACKGROUND_UPLOAD_TASK = "BACKGROUND_UPLOAD_TASK";
 
 // Define background task
@@ -31,7 +31,7 @@ const uploadAudioInBackground = async (
   audioKey: string
 ): Promise<void> => {
   const uploadTask = FileSystem.createUploadTask(
-    `${API_BASE_URL}/audio`,
+    `${API_BASE_URL}/audio/upload`,
     audioUri,
     {
       uploadType: FileSystem.FileSystemUploadType.MULTIPART,
@@ -123,7 +123,7 @@ export const createUploadSlice: StateCreator<StoreState, [], [], UploadSlice> = 
   },
 
   uploadAudio: async (audioUri: string, conversationId: string, audioKey: string) => {
-    const token = get().token || await get().fetchToken();
+    const token = await getClerkInstance().session?.getToken();
     if (!token) throw new Error("No authentication token");
 
     const uploadId = `${conversationId}_${audioKey}`;
@@ -131,7 +131,7 @@ export const createUploadSlice: StateCreator<StoreState, [], [], UploadSlice> = 
     try {
       // First attempt foreground upload
       const uploadTask = FileSystem.createUploadTask(
-        `${API_BASE_URL}/audio`,
+        `${API_BASE_URL}/audio/upload`,
         audioUri,
         {
           uploadType: FileSystem.FileSystemUploadType.MULTIPART,

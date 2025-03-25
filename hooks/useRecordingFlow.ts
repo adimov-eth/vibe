@@ -1,7 +1,7 @@
 import { Audio } from "expo-av";
+import * as Crypto from "expo-crypto";
 import * as FileSystem from "expo-file-system";
-import { useEffect, useState } from "react";
-import { v4 as uuidv4 } from "uuid";
+import { useCallback, useEffect, useState } from "react";
 import useStore from "../state/index";
 import { useUsage } from "./useUsage";
 
@@ -12,7 +12,7 @@ interface UseRecordingFlowProps {
 
 export const useRecordingFlow = ({ modeId, onComplete }: UseRecordingFlowProps) => {
   // Local state
-  const [localId] = useState(uuidv4());
+  const [localId] = useState(Crypto.randomUUID());
   const [recordMode, setRecordMode] = useState<'separate' | 'live'>('separate');
   const [currentPartner, setCurrentPartner] = useState<1 | 2>(1);
   const [isRecording, setIsRecording] = useState(false);
@@ -113,7 +113,7 @@ export const useRecordingFlow = ({ modeId, onComplete }: UseRecordingFlowProps) 
       }
     } else {
       try {
-        const canCreate = await checkCanCreateConversation(false);
+        const canCreate = await checkCanCreateConversation();
         if (!canCreate) {
           setError('Usage limit reached or subscription required');
           return;
@@ -174,16 +174,23 @@ export const useRecordingFlow = ({ modeId, onComplete }: UseRecordingFlowProps) 
       }
     };
 
-    const interval = setInterval(checkCurrentPermission, 1000);
-    return () => clearInterval(interval);
-  }, [permissionStatus, isRecording]);
+    // Only check permissions if we're recording
+    if (isRecording) {
+      const interval = setInterval(checkCurrentPermission, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [permissionStatus, isRecording, cleanup]);
 
-  // Cleanup on unmount
+  // Cleanup on unmount - using useCallback to stabilize the cleanup function
+  const stableCleanup = useCallback(async () => {
+    await cleanup();
+  }, []);
+
   useEffect(() => {
     return () => {
-      cleanup().catch(console.error);
+      stableCleanup().catch(console.error);
     };
-  }, []);
+  }, [stableCleanup]);
 
   return {
     recordMode,
@@ -193,7 +200,7 @@ export const useRecordingFlow = ({ modeId, onComplete }: UseRecordingFlowProps) 
     handleToggleMode,
     handleToggleRecording,
     error,
-    cleanup,
+    cleanup: stableCleanup,
     uploadProgress: store.uploadProgress[`${store.localToServerIds[localId]}_${recordMode === 'live' ? 'live' : currentPartner}`] || 0,
   };
 }; 

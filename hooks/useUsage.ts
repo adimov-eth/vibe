@@ -1,85 +1,76 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert } from "react-native";
-import useStore from "../state/index";
+import useStore from "../state";
+import { formatDate } from "../utils/date";
 
 export const useUsage = () => {
-  const [isLoading, setIsLoading] = useState(true);
+  const { getUsageStats, usageStats, subscriptionStatus } = useStore();
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  
-  const { 
-    subscriptionStatus, 
-    usageStats, 
-    getUsageStats, 
-    checkSubscriptionStatus 
-  } = useStore();
+  const [hasShownWelcome, setHasShownWelcome] = useState(false);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await getUsageStats();
+    } catch (err) {
+      setError(err as Error);
+    } finally {
+      setLoading(false);
+    }
+  }, [getUsageStats]);
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        
-        if (!usageStats) {
-          await getUsageStats();
-        }
-        if (!subscriptionStatus) {
-          await checkSubscriptionStatus();
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err : new Error('Failed to load usage data'));
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     loadData();
-  }, [usageStats, subscriptionStatus, getUsageStats, checkSubscriptionStatus]);
+  }, [loadData]);
 
-  const checkCanCreateConversation = useCallback(async (showAlert = true) => {
-    try {
-      await checkSubscriptionStatus();
-      await getUsageStats();
-      
-      if (!subscriptionStatus?.active) {
-        if (showAlert) {
-          Alert.alert(
-            'Subscription Required',
-            'Please subscribe to continue using VibeCheck.',
-            [{ text: 'OK' }]
-          );
-        }
-        return false;
-      }
-
-      if (usageStats && usageStats.remainingMinutes <= 0) {
-        if (showAlert) {
-          Alert.alert(
-            'Usage Limit Reached',
-            'You have reached your usage limit for this billing period.',
-            [{ text: 'OK' }]
-          );
-        }
-        return false;
-      }
-
-      return true;
-    } catch {
-      if (showAlert) {
+  const checkCanCreateConversation = useCallback(() => {
+    if (!usageStats) {
+      if (!hasShownWelcome) {
         Alert.alert(
-          'Error',
-          'Failed to verify usage limits. Please try again.',
-          [{ text: 'OK' }]
+          'Welcome!',
+          'Start your free trial with 10 conversations per week.'
         );
+        setHasShownWelcome(true);
       }
-      return false;
+      return true;
     }
-  }, [subscriptionStatus, usageStats, checkSubscriptionStatus, getUsageStats]);
+
+    if (usageStats.isSubscribed) {
+      return true;
+    }
+
+    if (usageStats.remainingConversations > 0) {
+      if (!hasShownWelcome) {
+        Alert.alert(
+          'Free Trial',
+          `You have ${usageStats.remainingConversations} conversations remaining this week. Reset on ${formatDate(usageStats.resetDate)}.`
+        );
+        setHasShownWelcome(true);
+      }
+      return true;
+    }
+
+    Alert.alert(
+      'Free Trial Ended',
+      `You've used all your free conversations for this week. They will reset on ${formatDate(usageStats.resetDate)}.\n\nUpgrade to Premium for unlimited conversations.`,
+      [
+        { text: 'Maybe Later', style: 'cancel' },
+        { text: 'Upgrade Now', onPress: () => {
+          // TODO: Navigate to subscription screen
+        }}
+      ]
+    );
+    return false;
+  }, [usageStats, hasShownWelcome]);
 
   return {
-    subscriptionStatus,
-    usageStats,
-    checkCanCreateConversation,
-    isLoading,
+    loading,
     error,
+    usageStats,
+    subscriptionStatus,
+    checkCanCreateConversation,
+    loadData
   };
 }; 

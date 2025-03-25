@@ -49,12 +49,30 @@ export default function SignUp() {
         showToast.success("Success", "Account created successfully");
         router.replace("../home");
       } else if (signUpAttempt.status === "missing_requirements") {
-        // Email verification needed
-        showToast.info("Verification Required", "Please verify your email address");
-        router.push({
-          pathname: "./verify-email",
-          params: { email: data.email },
-        });
+        // Log the full response for debugging
+        console.log("Sign up requirements:", JSON.stringify(signUpAttempt, null, 2));
+        
+        // Check if email verification is specifically required
+        const needsEmailVerification = signUpAttempt.verifications?.emailAddress?.status !== "verified";
+        
+        if (needsEmailVerification) {
+          showToast.info("Verification Required", "Please verify your email address");
+          router.push({
+            pathname: "/(auth)/verify-email",
+            params: { email: data.email },
+          });
+        } else {
+          // If no email verification needed, try to complete the sign up
+          try {
+            await signUpAttempt.prepareEmailAddressVerification();
+            await setActive({ session: signUpAttempt.createdSessionId });
+            showToast.success("Success", "Account created successfully");
+            router.replace("../home");
+          } catch (verificationErr) {
+            console.error("Verification error:", verificationErr);
+            throw new Error("Failed to complete sign up process");
+          }
+        }
       } else {
         // User needs to complete additional steps
         console.error("Sign up incomplete:", JSON.stringify(signUpAttempt, null, 2));

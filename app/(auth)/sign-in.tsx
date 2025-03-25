@@ -7,6 +7,7 @@ import { showToast } from "@/components/ui/Toast";
 import { colors, spacing, typography } from "@/constants/styles";
 import { signInSchema, type SignInFormData } from "@/validations/auth";
 import { useSignIn } from "@clerk/clerk-expo";
+import { isClerkAPIResponseError, isClerkRuntimeError } from "@clerk/clerk-js";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link, useRouter } from "expo-router";
 import React, { useState } from "react";
@@ -47,17 +48,34 @@ export default function SignIn() {
         await setActive({ session: signInAttempt.createdSessionId });
         showToast.success("Success", "Signed in successfully");
         router.replace("../home");
+      } else if (signInAttempt.status === "needs_second_factor") {
+        // Handle 2FA if needed
+        setError("Two-factor authentication is required");
+        // TODO: Implement 2FA flow
+      } else if (!signInAttempt.status) {
+        throw new Error("Unable to complete sign in. Please check your network connection and try again.");
       } else {
-        // User needs to complete additional steps
-        console.error("Sign in incomplete:", JSON.stringify(signInAttempt, null, 2));
-        throw new Error(`Sign in failed: ${signInAttempt.status}`);
+        throw new Error(`Sign in could not be completed: ${signInAttempt.status}`);
       }
     } catch (err) {
       console.error("Sign in failed:", err);
-      const errorMsg = err instanceof Error ? 
-        err.message : "Failed to sign in. Please check your credentials and try again.";
-      setError(errorMsg);
-      showToast.error("Error", errorMsg);
+      
+      let errorMessage = "An unexpected error occurred. Please try again.";
+      
+      if (isClerkRuntimeError(err)) {
+        if (err.code === "network_error") {
+          errorMessage = "Network connection error. Please check your internet connection and try again.";
+        } else {
+          errorMessage = err.message;
+        }
+      } else if (isClerkAPIResponseError(err)) {
+        errorMessage = err.errors[0]?.longMessage || err.errors[0]?.message || "Authentication failed. Please try again.";
+      } else if (err instanceof Error) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
+      showToast.error("Error", errorMessage);
     }
   };
 
@@ -68,7 +86,12 @@ export default function SignIn() {
         <Text style={styles.subtitle}>Log in to your account</Text>
       </View>
 
-      {error && <ErrorMessage message={error} testID="auth-error" />}
+      {error && (
+        <ErrorMessage 
+          message={error} 
+          testID="auth-error"
+        />
+      )}
 
       <Controller
         control={control}
@@ -83,6 +106,7 @@ export default function SignIn() {
             autoCapitalize="none"
             disabled={isSubmitting || !isLoaded}
             error={errors.email?.message}
+            testID="email-input"
           />
         )}
       />
@@ -99,6 +123,7 @@ export default function SignIn() {
               placeholder="Enter your password"
               disabled={isSubmitting || !isLoaded}
               error={errors.password?.message}
+              testID="password-input"
             />
           )}
         />
@@ -115,6 +140,7 @@ export default function SignIn() {
         loading={isSubmitting || !isLoaded}
         disabled={isSubmitting || !isLoaded}
         style={styles.button}
+        testID="sign-in-button"
       />
 
       <View style={styles.footer}>
@@ -145,6 +171,9 @@ const styles = StyleSheet.create({
     ...typography.body1,
     color: colors.mediumText,
     textAlign: "center",
+  },
+  errorMessage: {
+    marginBottom: spacing.md,
   },
   passwordContainer: {
     marginBottom: spacing.lg,

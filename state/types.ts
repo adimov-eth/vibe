@@ -22,26 +22,18 @@ export type UploadResult =
   | { success: false; error: string; audioUri: string; conversationId: string; audioKey: string };
 
 export interface SubscriptionStatus {
-  active: boolean;
-  plan: string;
-  expiresAt: string;
+  isActive: boolean;
+  expiresDate: number | null;
+  type: string | null;
+  subscriptionId: number | null;
 }
 
 export interface UsageStats {
-  totalConversations: number;
-  totalMinutes: number;
-  remainingMinutes: number;
-}
-
-export interface AuthSlice {
-  token: string | null;
-  userProfile: User | null;
-  authLoading: boolean;
-  error: string | null;
-  setError: (error: string | null) => void;
-  fetchToken: () => Promise<string | null>;
-  getUserProfile: () => Promise<User | null>;
-  logout: () => Promise<void>;
+  currentUsage: number;
+  limit: number;
+  isSubscribed: boolean;
+  remainingConversations: number;
+  resetDate: number;
 }
 
 export interface ConversationSlice {
@@ -89,6 +81,7 @@ export interface SubscriptionSlice {
   cleanupStore: () => void;
   purchaseSubscription: (productId: string, offerToken?: string) => Promise<void>;
   restorePurchases: () => Promise<void>;
+  setInitialUsageStats: (stats: UsageStats) => void;
 }
 
 export interface WebSocketSlice {
@@ -101,6 +94,7 @@ export interface WebSocketSlice {
   calculateBackoff: () => number;
   connectWebSocket: () => Promise<void>;
   subscribeToConversation: (conversationId: string) => void;
+  unsubscribeFromConversation: (conversationId: string) => void;
   clearMessages: () => void;
 }
 
@@ -133,8 +127,7 @@ export interface SubscriptionProduct {
   }[];
 }
 
-export type StoreState = AuthSlice &
-  ConversationSlice &
+export type StoreState = ConversationSlice &
   UploadSlice &
   SubscriptionSlice &
   WebSocketSlice;
@@ -145,4 +138,4 @@ export interface StoreActions {
 }
 
 export const API_BASE_URL = "https://v.bkk.lol";
-export const WS_URL = "ws://v.bkk.lol/ws";
+export const WS_URL = "wss://v.bkk.lol/ws";

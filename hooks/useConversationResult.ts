@@ -23,29 +23,39 @@ export const useConversationResult = (conversationId: string) => {
     socket, 
     connectWebSocket, 
     subscribeToConversation,
+    unsubscribeFromConversation,
     clearMessages,
     clearUploadState,
   } = useStore();
 
   // Connect to WebSocket and subscribe to conversation updates
   useEffect(() => {
+    let mounted = true;
+
     const setupWebSocket = async () => {
       try {
         if (!socket) {
           await connectWebSocket();
         }
-        subscribeToConversation(conversationId);
+        if (mounted) {
+          subscribeToConversation(conversationId);
+        }
       } catch (err) {
-        setError(err instanceof Error ? err : new Error('Failed to connect to WebSocket'));
+        if (mounted) {
+          setError(err instanceof Error ? err : new Error('Failed to connect to WebSocket'));
+        }
       }
     };
 
     setupWebSocket();
 
+    // Cleanup function
     return () => {
+      mounted = false;
+      unsubscribeFromConversation(conversationId);
       clearMessages();
     };
-  }, [conversationId, socket, connectWebSocket, subscribeToConversation, clearMessages]);
+  }, [conversationId, socket, connectWebSocket, subscribeToConversation, unsubscribeFromConversation, clearMessages]);
 
   // Process WebSocket messages and handle cleanup
   useEffect(() => {

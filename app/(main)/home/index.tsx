@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography } from '@/constants/styles';
 import { useUsage } from '@/hooks/useUsage';
 import { useRouter } from 'expo-router';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 // Define the available conversation modes
@@ -41,21 +41,27 @@ export default function Home() {
   const { 
     subscriptionStatus,
     usageStats,
-    isLoading,
+    loading,
     error,
-    checkCanCreateConversation
+    checkCanCreateConversation,
+    loadData
   } = useUsage();
+
+  // Load usage stats on mount
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   // Navigate to mode details screen
   const handleSelectMode = async (mode: typeof CONVERSATION_MODES[0]) => {
     const canCreate = await checkCanCreateConversation();
     if (canCreate) {
-      router.push(`./${mode.id}`);
+      router.push(`/home/${mode.id}`);
     }
   };
 
   // Loading state
-  if (isLoading) {
+  if (loading && !usageStats) {
     return (
       <Container withSafeArea>
         <AppBar title="VibeCheck" />
@@ -77,13 +83,17 @@ export default function Home() {
           <Button 
             title="Retry" 
             variant="primary"
-            onPress={() => checkCanCreateConversation(false)}
+            onPress={loadData}
             style={styles.retryButton}
           />
         </View>
       </Container>
     );
   }
+
+  const remainingConversations = usageStats?.remainingConversations ?? 0;
+  const isSubscribed = subscriptionStatus?.isActive ?? false;
+  const subscriptionType = subscriptionStatus?.type;
 
   return (
     <Container withSafeArea>
@@ -94,8 +104,8 @@ export default function Home() {
         contentContainerStyle={styles.scrollContent}
         refreshControl={
           <RefreshControl
-            refreshing={isLoading}
-            onRefresh={() => checkCanCreateConversation(false)}
+            refreshing={loading}
+            onRefresh={loadData}
             colors={[colors.primary]}
           />
         }
@@ -108,9 +118,9 @@ export default function Home() {
         
         <View style={styles.usageContainer}>
           <Text style={styles.usageText}>
-            {subscriptionStatus?.active ? 
-              `Unlimited conversations (${subscriptionStatus.plan})` : 
-              `${usageStats?.remainingMinutes || 0} of ${usageStats?.totalMinutes || 0} minutes left`
+            {isSubscribed ? 
+              `Unlimited conversations (${subscriptionType})` : 
+              `${remainingConversations} conversation${remainingConversations !== 1 ? 's' : ''} left`
             }
           </Text>
         </View>

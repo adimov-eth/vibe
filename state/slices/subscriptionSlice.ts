@@ -1,3 +1,4 @@
+import { getClerkInstance } from '@clerk/clerk-expo';
 import { Platform } from 'react-native';
 import {
   endConnection,
@@ -13,7 +14,7 @@ import {
   SubscriptionIOS
 } from 'react-native-iap';
 import { StateCreator } from "zustand";
-import { API_BASE_URL, StoreState, SubscriptionSlice, SubscriptionStatus, UsageStats } from "../types";
+import { API_BASE_URL, StoreState, SubscriptionSlice, UsageStats } from "../types";
 
 export interface SubscriptionProduct {
   productId: string;
@@ -57,6 +58,12 @@ export const createSubscriptionSlice: StateCreator<
     set({ subscriptionError: new Error(error.message) });
   };
 
+  const getAuthToken = async () => {
+    const token = await getClerkInstance().session?.getToken();
+    if (!token) throw new Error("No authentication token");
+    return token;
+  };
+
   return {
     subscriptionStatus: null,
     usageStats: null,
@@ -65,8 +72,7 @@ export const createSubscriptionSlice: StateCreator<
     subscriptionError: null,
 
     verifySubscription: async (receiptData: string) => {
-      const token = get().token || (await get().fetchToken());
-      if (!token) throw new Error("No authentication token");
+      const token = await getAuthToken();
 
       const response = await fetch(`${API_BASE_URL}/subscriptions/verify`, {
         method: "POST",
@@ -80,42 +86,84 @@ export const createSubscriptionSlice: StateCreator<
       if (!response.ok) throw new Error("Failed to verify subscription");
 
       const data = await response.json();
-      set({ subscriptionStatus: data.subscription as SubscriptionStatus });
+      set({ 
+        subscriptionStatus: {
+          isActive: data.subscription?.isValid || false,
+          expiresDate: data.subscription?.expiresDate || null,
+          type: data.subscription?.type || null,
+          subscriptionId: data.subscription?.id || null
+        } 
+      });
       return data;
     },
 
     checkSubscriptionStatus: async () => {
-      const token = get().token || (await get().fetchToken());
-      if (!token) throw new Error("No authentication token");
+      try {
+        console.log("[Store] Checking subscription status...");
+        const token = await getAuthToken();
+        console.log("[Store] Auth token obtained, making API request");
 
-      const response = await fetch(`${API_BASE_URL}/subscriptions/status`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+        const response = await fetch(`${API_BASE_URL}/subscriptions/status`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
 
-      if (!response.ok) throw new Error("Failed to check subscription status");
+        console.log("[Store] Subscription status API response status:", response.status);
+        
+        if (!response.ok) {
+          console.error("[Store] Failed to check subscription status:", response.statusText);
+          throw new Error("Failed to check subscription status");
+        }
 
-      const data = await response.json();
-      if (data.subscription) {
-        set({ subscriptionStatus: data.subscription as SubscriptionStatus });
+        const data = await response.json();
+        console.log("[Store] Subscription status received:", JSON.stringify(data, null, 2));
+        
+        if (data.subscription) {
+          set({ 
+            subscriptionStatus: {
+              isActive: data.subscription?.isValid || false,
+              expiresDate: data.subscription?.expiresDate || null,
+              type: data.subscription?.type || null,
+              subscriptionId: data.subscription?.id || null
+            } 
+          });
+          console.log("[Store] Subscription status updated in store:", JSON.stringify(data.subscription, null, 2));
+        }
+        return data;
+      } catch (err) {
+        console.error("[Store] Error in checkSubscriptionStatus:", JSON.stringify(err, null, 2));
+        throw err;
       }
-      return data;
     },
 
     getUsageStats: async () => {
-      const token = get().token || (await get().fetchToken());
-      if (!token) throw new Error("No authentication token");
+      try {
+        console.log("[Store] Getting usage stats...");
+        const token = await getAuthToken();
+        console.log("[Store] Auth token obtained, making API request");
 
-      const response = await fetch(`${API_BASE_URL}/usage/stats`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+        const response = await fetch(`${API_BASE_URL}/usage/stats`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
 
-      if (!response.ok) throw new Error("Failed to fetch usage stats");
+        console.log("[Store] Usage stats API response status:", response.status);
+        
+        if (!response.ok) {
+          console.error("[Store] Failed to fetch usage stats:", response.statusText);
+          throw new Error("Failed to fetch usage stats");
+        }
 
-      const data = await response.json();
-      if (data.usage) {
-        set({ usageStats: data.usage as UsageStats });
+        const data = await response.json();
+        console.log("[Store] Usage stats received:", JSON.stringify(data, null, 2));
+        
+        if (data.usage) {
+          set({ usageStats: data.usage as UsageStats });
+          console.log("[Store] Usage stats updated in store:", JSON.stringify(data.usage, null, 2));
+        }
+        return data;
+      } catch (err) {
+        console.error("[Store] Error in getUsageStats:", JSON.stringify(err, null, 2));
+        throw err;
       }
-      return data;
     },
 
     initializeStore: async () => {
@@ -189,6 +237,10 @@ export const createSubscriptionSlice: StateCreator<
       } finally {
         set({ subscriptionLoading: false });
       }
+    },
+
+    setInitialUsageStats: (stats: UsageStats) => {
+      set({ usageStats: stats });
     },
   };
 };
