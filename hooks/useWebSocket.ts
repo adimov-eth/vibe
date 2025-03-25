@@ -1,3 +1,4 @@
+// hooks/useWebSocket.ts
 import { useEffect } from 'react';
 import useStore from '../state/index';
 
@@ -6,7 +7,11 @@ export const useWebSocket = () => {
     useStore();
 
   useEffect(() => {
-    if (!socket) connectWebSocket().catch(() => {});
+    if (!socket || socket.readyState === WebSocket.CLOSED) {
+      connectWebSocket().catch((err) => {
+        console.error('WebSocket connection failed:', err);
+      });
+    }
   }, [socket, connectWebSocket]);
 
   return { socket, messages: wsMessages, subscribeToConversation, clearMessages };

@@ -1,10 +1,9 @@
 // state/slices/websocketSlice.ts
-import { getClerkInstance } from "@clerk/clerk-expo";
-import { StateCreator } from "zustand";
-import { immer } from "zustand/middleware/immer";
-import { StoreState, WS_URL, WebSocketMessage } from "../types";
+import { getClerkInstance } from '@clerk/clerk-expo';
+import { StateCreator } from 'zustand';
+import { immer } from 'zustand/middleware/immer';
+import { StoreState, WS_URL, WebSocketMessage } from '../types';
 
-// Initial state type
 interface WebSocketState {
   socket: WebSocket | null;
   wsMessages: WebSocketMessage[];
@@ -15,7 +14,6 @@ interface WebSocketState {
   isConnecting: boolean;
 }
 
-// Actions type
 interface WebSocketActions {
   calculateBackoff: () => number;
   connectWebSocket: () => Promise<void>;
@@ -24,10 +22,8 @@ interface WebSocketActions {
   clearMessages: () => void;
 }
 
-// Combined slice type
 export type WebSocketSlice = WebSocketState & WebSocketActions;
 
-// Initial state
 const initialState: WebSocketState = {
   socket: null,
   wsMessages: [],
@@ -41,13 +37,13 @@ const initialState: WebSocketState = {
 export const createWebSocketSlice: StateCreator<
   StoreState,
   [],
-  [["zustand/immer", never]],
+  [['zustand/immer', never]],
   WebSocketSlice
 > = immer((set, get) => ({
   ...initialState,
 
   calculateBackoff: () => {
-    const state = get() as WebSocketSlice;
+    const state = get();
     const exponentialDelay = Math.min(
       Math.pow(2, state.reconnectAttempts) * state.reconnectInterval,
       state.maxReconnectDelay
@@ -57,31 +53,77 @@ export const createWebSocketSlice: StateCreator<
   },
 
   connectWebSocket: async () => {
-    const state = get() as WebSocketSlice;
+    const state = get();
     if (state.isConnecting || state.socket?.readyState === WebSocket.CONNECTING) {
-      console.log("WebSocket connection already in progress");
+      console.log('WebSocket connection already in progress');
       return;
     }
 
     if (state.reconnectAttempts >= state.maxReconnectAttempts) {
-      console.error("Max reconnection attempts reached");
+      console.error('Max reconnection attempts reached');
       return;
     }
 
-    set((state) => { state.isConnecting = true });
+    set((state) => {
+      state.isConnecting = true;
+    });
 
     try {
-      const token = await getClerkInstance().session?.getToken();
-      if (!token) {
-        console.error("No authentication token available");
-        set((state) => { state.isConnecting = false });
+      const clerk = getClerkInstance();
+      const session = await clerk.session;
+      
+      if (!session) {
+        console.error('No active session available');
+        set((state) => {
+          state.isConnecting = false;
+        });
         return;
+      }
+
+      // Get a fresh token and handle token expiration
+      let token: string | null;
+      try {
+        token = await session.getToken({
+          template: 'default',
+          skipCache: true  // Always get a fresh token
+        });
+
+        if (!token) {
+          throw new Error('Token is null after getToken');
+        }
+      } catch (tokenError) {
+        console.error('Failed to get fresh token:', tokenError);
+        // Attempt to refresh the session
+        try {
+          // Refresh the session using Clerk instance
+          const newSession = await clerk.session;
+          if (!newSession) {
+            throw new Error('No session after refresh attempt');
+          }
+          
+          token = await newSession.getToken({
+            template: 'default',
+            skipCache: true
+          });
+
+          if (!token) {
+            throw new Error('Token is null after refresh');
+          }
+        } catch (refreshError) {
+          console.error('Failed to refresh session:', refreshError);
+          set((state) => {
+            state.isConnecting = false;
+          });
+          return;
+        }
       }
 
       const existingSocket = state.socket;
       if (existingSocket && existingSocket.readyState !== WebSocket.CLOSED) {
         existingSocket.close();
-        set((state) => { state.socket = null });
+        set((state) => {
+          state.socket = null;
+        });
       }
 
       const wsUrl = new URL(WS_URL);
@@ -89,17 +131,17 @@ export const createWebSocketSlice: StateCreator<
       wsUrl.searchParams.append('version', 'v1');
 
       const ws = new WebSocket(wsUrl.toString());
-      
+
       const connectionTimeout = setTimeout(() => {
         if (ws.readyState !== WebSocket.OPEN) {
-          console.error("WebSocket connection timeout");
+          console.error('WebSocket connection timeout');
           ws.close();
         }
       }, 10000);
 
       ws.onopen = () => {
         clearTimeout(connectionTimeout);
-        console.log("WebSocket Connected");
+        console.log('WebSocket Connected');
         set((state) => {
           state.reconnectAttempts = 0;
           state.isConnecting = false;
@@ -109,12 +151,12 @@ export const createWebSocketSlice: StateCreator<
 
       ws.onmessage = (event) => {
         try {
-          const message = JSON.parse(event.data);
+          const message = JSON.parse(event.data) as WebSocketMessage;
           set((state) => {
             state.wsMessages = [...state.wsMessages.slice(-99), message];
           });
         } catch (error) {
-          console.error("Failed to parse WebSocket message:", error);
+          console.error('Failed to parse WebSocket message:', error);
         }
       };
 
@@ -125,25 +167,30 @@ export const createWebSocketSlice: StateCreator<
           state.socket = null;
           state.isConnecting = false;
         });
-        
-        const currentState = get() as WebSocketSlice;
-        if (currentState.reconnectAttempts < currentState.maxReconnectAttempts && event.code !== 1000) {
+
+        const currentState = get();
+        if (
+          currentState.reconnectAttempts < currentState.maxReconnectAttempts &&
+          event.code !== 1000 // Normal closure
+        ) {
           const backoffDelay = currentState.calculateBackoff();
-          console.log(`Reconnecting in ${backoffDelay}ms (attempt ${currentState.reconnectAttempts + 1})`);
-          
+          console.log(
+            `Reconnecting in ${backoffDelay}ms (attempt ${currentState.reconnectAttempts + 1})`
+          );
           setTimeout(() => {
-            set((state) => { state.reconnectAttempts += 1 });
-            (get() as WebSocketSlice).connectWebSocket();
+            set((state) => {
+              state.reconnectAttempts += 1;
+            });
+            currentState.connectWebSocket();
           }, backoffDelay);
         }
       };
 
       ws.onerror = (error) => {
-        console.error("WebSocket Error:", error);
+        console.error('WebSocket Error:', error);
       };
-
     } catch (error) {
-      console.error("Failed to connect WebSocket:", error);
+      console.error('Failed to connect WebSocket:', error);
       set((state) => {
         state.reconnectAttempts += 1;
         state.isConnecting = false;
@@ -152,12 +199,12 @@ export const createWebSocketSlice: StateCreator<
   },
 
   subscribeToConversation: (conversationId: string) => {
-    const state = get() as WebSocketSlice;
+    const state = get();
     const socket = state.socket;
     if (socket?.readyState === WebSocket.OPEN) {
       socket.send(
         JSON.stringify({
-          type: "subscribe",
+          type: 'subscribe',
           topic: `conversation:${conversationId}`,
         })
       );
@@ -165,17 +212,21 @@ export const createWebSocketSlice: StateCreator<
   },
 
   unsubscribeFromConversation: (conversationId: string) => {
-    const state = get() as WebSocketSlice;
+    const state = get();
     const socket = state.socket;
     if (socket?.readyState === WebSocket.OPEN) {
       socket.send(
         JSON.stringify({
-          type: "unsubscribe",
+          type: 'unsubscribe',
           topic: `conversation:${conversationId}`,
         })
       );
     }
   },
 
-  clearMessages: () => set((state) => { state.wsMessages = [] }),
+  clearMessages: () => {
+    set((state) => {
+      state.wsMessages = [];
+    });
+  },
 }));
