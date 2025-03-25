@@ -84,7 +84,7 @@ export const createWebSocketSlice: StateCreator<
       let token: string | null;
       try {
         token = await session.getToken({
-          template: 'default',
+          template: 'uspeh',
           skipCache: true  // Always get a fresh token
         });
 
@@ -102,7 +102,7 @@ export const createWebSocketSlice: StateCreator<
           }
           
           token = await newSession.getToken({
-            template: 'default',
+            template: 'uspeh',
             skipCache: true
           });
 
@@ -129,8 +129,9 @@ export const createWebSocketSlice: StateCreator<
       const wsUrl = new URL(WS_URL);
       wsUrl.searchParams.append('token', encodeURIComponent(token));
       wsUrl.searchParams.append('version', 'v1');
-
-      const ws = new WebSocket(wsUrl.toString());
+      const connectionUrl = wsUrl.toString();
+      console.log('WebSocket connection URL:', connectionUrl);
+      const ws = new WebSocket(connectionUrl);
 
       const connectionTimeout = setTimeout(() => {
         if (ws.readyState !== WebSocket.OPEN) {
@@ -142,6 +143,7 @@ export const createWebSocketSlice: StateCreator<
       ws.onopen = () => {
         clearTimeout(connectionTimeout);
         console.log('WebSocket Connected');
+        console.log('ws:', ws);
         set((state) => {
           state.reconnectAttempts = 0;
           state.isConnecting = false;
@@ -151,6 +153,7 @@ export const createWebSocketSlice: StateCreator<
 
       ws.onmessage = (event) => {
         try {
+          console.log('event:', event);
           const message = JSON.parse(event.data) as WebSocketMessage;
           set((state) => {
             state.wsMessages = [...state.wsMessages.slice(-99), message];

@@ -1,4 +1,3 @@
-// hooks/useConversationResult.ts
 import { useEffect, useState } from 'react';
 import useStore from '../state/index';
 import type { WebSocketMessage } from '../state/types';
@@ -28,14 +27,34 @@ export const useConversationResult = (conversationId: string) => {
 
   useEffect(() => {
     let mounted = true;
+    let retryCount = 0;
+    const maxRetries = 3;
+
+    const attemptSubscription = () => {
+      if (socket?.readyState === WebSocket.OPEN && mounted) {
+        subscribeToConversation(conversationId);
+        return true;
+      }
+      return false;
+    };
 
     const setupWebSocket = async () => {
       try {
         if (!socket || socket.readyState === WebSocket.CLOSED) {
           await connectWebSocket();
         }
-        if (mounted) {
-          subscribeToConversation(conversationId);
+
+        // Initial subscription attempt
+        if (!attemptSubscription() && retryCount < maxRetries) {
+          // Set up retry with exponential backoff
+          const retryDelay = Math.min(1000 * Math.pow(2, retryCount), 5000);
+          retryCount++;
+          
+          setTimeout(() => {
+            if (mounted && !attemptSubscription() && retryCount < maxRetries) {
+              setupWebSocket();
+            }
+          }, retryDelay);
         }
       } catch (err) {
         if (mounted) {
@@ -50,8 +69,6 @@ export const useConversationResult = (conversationId: string) => {
     return () => {
       mounted = false;
       unsubscribeFromConversation(conversationId);
-      // Only clear messages if no other components are using the WebSocket
-      // clearMessages();
     };
   }, [conversationId, socket, connectWebSocket, subscribeToConversation, unsubscribeFromConversation]);
 
@@ -91,8 +108,9 @@ export const useConversationResult = (conversationId: string) => {
           clearUploadState(conversationId);
           break;
         case 'status':
-          if (msg.payload.status === 'completed') {
+          if (msg.payload.status === 'conversation_completed') {
             result.status = 'completed';
+            result.analysis = msg.payload.gptResponse;
             result.progress = 100;
             clearUploadState(conversationId);
           } else if (msg.payload.status === 'error') {
@@ -130,4 +148,4 @@ export const useConversationResult = (conversationId: string) => {
     error,
     refetch,
   };
-};
+}; 

@@ -39,7 +39,7 @@ export const useUsage = () => {
   const checkCanCreateConversation = useCallback(() => {
     if (!usageStats) {
       if (!hasShownWelcome) {
-        Alert.alert('Welcome!', 'Start your free trial with 10 conversations per week.');
+        // Alert.alert('Welcome!', 'Start your free trial with 10 conversations per week.');
         setHasShownWelcome(true);
       }
       return true;

@@ -64,6 +64,7 @@ export interface WebSocketMessage {
     content?: string;
     error?: string;
     status?: string;
+    gptResponse?: string;
   };
   timestamp: string;
 }
