@@ -39,6 +39,7 @@ export interface UsageStats {
 export interface ConversationSlice {
   conversations: Record<string, Conversation>;
   conversationLoading: Record<string, boolean>;
+  clearConversations: () => void;
   createConversation: (
     mode: string,
     recordingType: "separate" | "live",

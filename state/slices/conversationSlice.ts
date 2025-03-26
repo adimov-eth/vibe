@@ -18,6 +18,13 @@ export const createConversationSlice: StateCreator<
     conversations: {},
     conversationLoading: {},
 
+    clearConversations: () => {
+      set(() => ({
+        conversations: {},
+        conversationLoading: {},
+      }));
+    },
+
     createConversation: async (
       mode: string,
       recordingType: "separate" | "live",

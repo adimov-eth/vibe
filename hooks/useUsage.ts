@@ -1,8 +1,8 @@
+import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import useStore from '../state';
 import { formatDate } from '../utils/date';
-
 export const useUsage = () => {
   const { getUsageStats, checkSubscriptionStatus, usageStats, subscriptionStatus } = useStore();
   const [loading, setLoading] = useState(false);
@@ -45,20 +45,8 @@ export const useUsage = () => {
       return true;
     }
 
-    if (usageStats.isSubscribed) return true;
+    if (usageStats.isSubscribed || usageStats.remainingConversations > 0) return true;
 
-    if (usageStats.remainingConversations > 0) {
-      if (!hasShownWelcome) {
-        Alert.alert(
-          'Free Trial',
-          `You have ${usageStats.remainingConversations} conversations remaining this week. Reset on ${formatDate(
-            usageStats.resetDate
-          )}.`
-        );
-        setHasShownWelcome(true);
-      }
-      return true;
-    }
 
     Alert.alert(
       'Free Trial Ended',
@@ -70,7 +58,7 @@ export const useUsage = () => {
         {
           text: 'Upgrade Now',
           onPress: () => {
-            // TODO: Navigate to subscription screen
+            router.push('/paywall');
           },
         },
       ]

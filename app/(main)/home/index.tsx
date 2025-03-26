@@ -59,7 +59,7 @@ export default function Home() {
   const handleSelectMode = async (mode: typeof CONVERSATION_MODES[0]) => {
     const canCreate = await checkCanCreateConversation();
     if (canCreate) {
-      router.push(`/home/${mode.id}`);
+      router.push(`/recording/${mode.id}`);
     }
   };
 
@@ -109,11 +109,6 @@ export default function Home() {
           />
         }
       >
-        <View style={styles.headerContainer}>
-          <Text style={styles.headerSubtitle}>
-            An objective 3rd party to help you settle whatever needs settling
-          </Text>
-        </View>
         
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeader}>
@@ -144,17 +139,8 @@ export default function Home() {
 const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: spacing.lg,
+    paddingTop: spacing.section,
     paddingBottom: spacing.section,
-  },
-  headerContainer: {
-    alignItems: 'center',
-    marginVertical: spacing.md,
-    paddingHorizontal: spacing.xl,
-  },
-  headerSubtitle: {
-    ...typography.body2,
-    color: colors.mediumText,
-    textAlign: 'center',
   },
   sectionContainer: {
     width: '100%',

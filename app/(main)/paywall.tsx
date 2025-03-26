@@ -204,19 +204,27 @@ export default function Paywall() {
         <Card style={localStyles.usageCard}>
           <View style={localStyles.usageStatsContainer}>
             <View style={localStyles.usageStat}>
-              <Text style={localStyles.usageStatLabel}>Current Usage</Text>
+              <Text style={localStyles.usageStatLabel}>
+                {usageData?.isSubscribed ? 'Subscription' : 'Current Usage'}
+              </Text>
               <Text style={localStyles.usageStatValue}>
-                {usageData ? `${usageData.currentUsage}/${usageData.currentUsage + usageData.remainingConversations}` : '0/0'}
+                {usageData?.isSubscribed
+                  ? 'Active'
+                  : (usageData ? `${usageData.currentUsage}/${usageData.limit}` : '0/0')}
               </Text>
             </View>
             
             <View style={localStyles.usageStat}>
-              <Text style={localStyles.usageStatLabel}>Remaining</Text>
+              <Text style={localStyles.usageStatLabel}>
+                {usageData?.isSubscribed ? 'Access' : 'Remaining'}
+              </Text>
               <Text style={[
                 localStyles.usageStatValue,
-                (!usageData?.remainingConversations) && localStyles.usageStatValueZero
+                (!usageData?.isSubscribed && usageData?.remainingConversations === 0) && localStyles.usageStatValueZero
               ]}>
-                {usageData?.remainingConversations || 0}
+                {usageData?.isSubscribed
+                  ? 'Unlimited'
+                  : (usageData?.remainingConversations || 0)}
               </Text>
             </View>
           </View>

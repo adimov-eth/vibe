@@ -1,16 +1,18 @@
 import { AppBar } from '@/components/layout/AppBar';
 import { Button } from '@/components/ui/Button';
 import { colors, layout, spacing, typography } from '@/constants/styles';
+import { useClearCache } from '@/hooks/useClearCache';
 import { useUsage } from '@/hooks/useUsage';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import { useRouter } from 'expo-router';
 import React, { useEffect } from 'react';
-import { ActivityIndicator, SafeAreaView, ScrollView, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
+import { ActivityIndicator, Alert, SafeAreaView, ScrollView, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
 
 export default function Profile() {
   const router = useRouter();
   const { user } = useUser();
   const { signOut } = useAuth();
+  const { clearCache, isClearing, error: clearError } = useClearCache();
   const { 
     subscriptionStatus,
     usageStats,
@@ -212,10 +214,33 @@ export default function Profile() {
                 title="Clear Cache"
                 variant="outline"
                 size="small"
-                onPress={() => {}}
+                onPress={() => {
+                  Alert.alert(
+                    'Clear Cache',
+                    'Are you sure you want to clear all cached recordings and conversation data? This cannot be undone.',
+                    [
+                      {
+                        text: 'Cancel',
+                        style: 'cancel',
+                      },
+                      {
+                        text: 'Clear',
+                        style: 'destructive',
+                        onPress: clearCache,
+                      },
+                    ],
+                  );
+                }}
                 leftIcon="trash-outline"
+                loading={isClearing}
+                disabled={isClearing}
               />
             </View>
+            {clearError && (
+              <Text style={[styles.errorText, { marginTop: spacing.sm }]}>
+                {clearError}
+              </Text>
+            )}
             {__DEV__ && (
               <>
                 <View style={[styles.buttonContainer, styles.devContainer]}>
