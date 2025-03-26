@@ -39,7 +39,6 @@ const CONVERSATION_MODES = [
 export default function Home() {
   const router = useRouter();
   const { 
-    subscriptionStatus,
     usageStats,
     loading,
     error,
@@ -95,10 +94,6 @@ export default function Home() {
     );
   }
 
-  const remainingConversations = usageStats?.remainingConversations ?? 0;
-  const isSubscribed = subscriptionStatus?.isActive ?? false;
-  const subscriptionType = subscriptionStatus?.type;
-
   return (
     <Container withSafeArea>
       <AppBar title="VibeCheck" />
@@ -117,15 +112,6 @@ export default function Home() {
         <View style={styles.headerContainer}>
           <Text style={styles.headerSubtitle}>
             An objective 3rd party to help you settle whatever needs settling
-          </Text>
-        </View>
-        
-        <View style={styles.usageContainer}>
-          <Text style={styles.usageText}>
-            {isSubscribed ? 
-              `Unlimited conversations (${subscriptionType})` : 
-              `${remainingConversations} conversation${remainingConversations !== 1 ? 's' : ''} left`
-            }
           </Text>
         </View>
         
@@ -169,18 +155,6 @@ const styles = StyleSheet.create({
     ...typography.body2,
     color: colors.mediumText,
     textAlign: 'center',
-  },
-  usageContainer: {
-    backgroundColor: colors.primaryLight + '20', // light primary with opacity
-    borderRadius: 8,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    alignItems: 'center',
-  },
-  usageText: {
-    ...typography.body2,
-    color: colors.primary,
-    fontWeight: '500',
   },
   sectionContainer: {
     width: '100%',

@@ -1,7 +1,18 @@
-import { Stack } from "expo-router";
+import { useAuth } from "@clerk/clerk-expo";
+import { Redirect, Stack } from "expo-router";
 import React from "react";
 
 export default function MainLayout() {
+  const { isSignedIn, isLoaded } = useAuth();
+
+  // Show nothing while loading
+  if (!isLoaded) return null;
+
+  // If user is not signed in, redirect to sign-in page
+  if (!isSignedIn) {
+    return <Redirect href="/sign-in" />;
+  }
+
   return (
     <Stack
       screenOptions={{

@@ -38,8 +38,8 @@ export default function Profile() {
 
   const handleBackPress = () => router.back();
   const handleSignOut = async () => await signOut();
-  const navigateToUpdatePassword = () => router.push('./update-password');
-  const navigateToPaywall = () => router.push('./paywall');
+  const navigateToUpdatePassword = () => router.push('/profile/update-password');
+  const navigateToPaywall = () => router.push('/paywall');
 
   const isSubscribed = subscriptionStatus?.isActive ?? false;
   const subscriptionPlan = subscriptionStatus?.type ?? 'none';
@@ -113,6 +113,7 @@ export default function Profile() {
       <AppBar 
         title="Profile" 
         showBackButton={true} 
+        showAvatar={false}
         onBackPress={handleBackPress} 
       />
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>

@@ -100,6 +100,7 @@ export default function UpdatePassword() {
       <AppBar 
         title="Update Password"
         showBackButton
+        showAvatar={false}
         onBackPress={() => router.back()}
       />
       
