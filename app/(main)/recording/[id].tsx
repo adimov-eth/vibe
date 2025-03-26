@@ -56,24 +56,24 @@ export default function Recording() {
   }, [cleanup]);
 
   // Render processing/uploading indicator
-  const renderProcessingIndicator = () => (
-    <View style={styles.processingContainer}>
-      <ActivityIndicator size="large" color={colors.primary} />
-      <Text style={styles.processingText}>
-        {isUploading ? 'Uploading...' : 'Processing...'}
-      </Text>
-      {uploadProgress > 0 && (
-        <View style={styles.progressContainer}>
-          <View style={styles.progressBackground}>
-            <View
-              style={[styles.progressBar, { width: `${uploadProgress}%` }]}
-            />
-          </View>
-          <Text style={styles.progressText}>{uploadProgress}%</Text>
-        </View>
-      )}
-    </View>
-  );
+  // const renderProcessingIndicator = () => (
+  //   <View style={styles.processingContainer}>
+  //     <ActivityIndicator size="large" color={colors.primary} />
+  //     <Text style={styles.processingText}>
+  //       {isUploading ? 'Uploading...' : 'Processing...'}
+  //     </Text>
+  //     {uploadProgress > 0 && (
+  //       <View style={styles.progressContainer}>
+  //         <View style={styles.progressBackground}>
+  //           <View
+  //             style={[styles.progressBar, { width: `${uploadProgress}%` }]}
+  //           />
+  //         </View>
+  //         <Text style={styles.progressText}>{uploadProgress}%</Text>
+  //       </View>
+  //     )}
+  //   </View>
+  // );
 
   return (
     <Container withSafeArea>
@@ -124,7 +124,7 @@ export default function Recording() {
         {/* Recording Button and Status */}
         <View style={styles.recordingContainer}>
           {isUploading ? (
-            renderProcessingIndicator()
+            <ActivityIndicator size="large" color={colors.primary} />
           ) : (
             <>
               <RecordButton
