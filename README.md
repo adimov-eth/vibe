@@ -1,50 +1,104 @@
-# Welcome to your Expo app 👋
+# Vibe - Voice Assistant App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+This is an [Expo](https://expo.dev) project that provides voice-based AI interactions.
 
-## Get started
+## Comprehensive Setup Guide
 
-1. Install dependencies
+### Prerequisites
+- Node.js (recommended: v18+)
+- PNPM package manager (v10.6.3+)
+- Expo CLI: `npm install -g expo-cli eas-cli`
+- Expo account (create at [expo.dev](https://expo.dev))
+- Xcode (for iOS builds)
+- Android Studio (for Android builds)
 
+### Initial Setup
+
+1. **Clone the repository**
    ```bash
-   npm install
+   git clone [repository-url]
+   cd vibe
    ```
 
-2. Start the app
-
+2. **Install dependencies**
    ```bash
-    npx expo start
+   pnpm install
    ```
 
-In the output, you'll find options to open the app in a
+3. **Environment Setup**
+   Create a `.env` file in the root directory with:
+   ```
+   EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_key
+   ```
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+4. **Run the development server**
+   ```bash
+   pnpm start
+   # or
+   expo start
+   ```
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+### Local Development
 
-## Get a fresh project
+- **iOS Simulator**: Press `i` in terminal or select iOS from Expo DevTools
+- **Android Emulator**: Press `a` in terminal or select Android from Expo DevTools
+- **Web**: `pnpm web`
 
-When you're ready, run:
+### Building with EAS (Expo Application Services)
 
-```bash
-npm run reset-project
-```
+1. **Login to Expo**
+   ```bash
+   eas login
+   ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+2. **Configure your project**
+   The project already has an `eas.json` file with build profiles
+
+3. **Run a development build**
+   ```bash
+   eas build --profile development --platform [ios|android]
+   ```
+
+4. **Run a preview build**
+   ```bash
+   eas build --profile preview --platform [ios|android]
+   ```
+
+5. **Run a production build**
+   ```bash
+   eas build --profile production --platform [ios|android]
+   ```
+
+6. **Submit to app stores**
+   ```bash
+   eas submit --platform [ios|android] --latest
+   ```
+
+### Additional Commands
+
+- **iOS build**: `pnpm ios`
+- **Android build**: `pnpm android`
+- **Web build**: `pnpm web`
+- **Run linting**: `pnpm lint`
+- **Run tests**: `pnpm test`
+- **Reset project**: `pnpm reset-project`
+
+### Project Architecture
+- Expo Router for navigation
+- Zustand + immer for state management
+- React Hook Form with Zod validation
+- WebSocket for real-time communication
+- Expo modules for device features
+- Clerk for authentication
+
+## Troubleshooting
+
+- **Environment Variables**: If Clerk authentication fails, ensure your Clerk publishable key is correctly set
+- **Native Module Issues**: Refer to `registerNativeModules.js` if experiencing native module problems
+- **Build Errors**: Check Expo's documentation for platform-specific build requirements
 
 ## Learn more
 
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- [Expo documentation](https://docs.expo.dev/)
+- [Expo Router documentation](https://docs.expo.dev/router/introduction/)
+- [EAS Build documentation](https://docs.expo.dev/build/introduction/)
