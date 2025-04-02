@@ -20,6 +20,7 @@ interface BaseMessagePayload {
 }
 
 export const useConversationResult = (conversationId: string) => {
+  console.log(`[useConversationResult Hook] Initializing hook for conversation: ${conversationId}`);
   const [data, setData] = useState<ConversationResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -41,6 +42,7 @@ export const useConversationResult = (conversationId: string) => {
   } = useStore();
 
   useEffect(() => {
+    console.log(`[useConversationResult Hook] useEffect running for conversation: ${conversationId}`);
     mounted.current = true;
 
     // Attempt to subscribe and return success status
@@ -112,18 +114,15 @@ export const useConversationResult = (conversationId: string) => {
 
     // Initialize the connection and subscription
     const initialize = async () => {
+       console.log(`[useConversationResult Hook] initialize() called for conversation: ${conversationId}`);
       try {
         if (__DEV__) {
-          console.log('Initializing WebSocket for conversation:', conversationId);
+          console.log('[useConversationResult Hook] Initializing WebSocket via attemptSubscription for conversation:', conversationId);
         }
-        
-        // Always attempt to subscribe, which will connect if needed
         attemptSubscription();
-        
-        // Start health check to ensure connection remains active
         startConnectionHealthCheck();
       } catch (err) {
-        console.error('WebSocket initialization error:', err);
+        console.error('[useConversationResult Hook] initialize() error:', err);
         if (mounted.current) {
           setError(err instanceof Error ? err : new Error('Failed to connect to WebSocket'));
           setIsLoading(false);
@@ -131,6 +130,7 @@ export const useConversationResult = (conversationId: string) => {
       }
     };
 
+    console.log(`[useConversationResult Hook] Calling initialize() for conversation: ${conversationId}`);
     initialize();
 
     return () => {
