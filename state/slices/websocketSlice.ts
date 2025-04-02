@@ -63,9 +63,10 @@ export const createWebSocketSlice: StateCreator<
     const state = get();
     // Prevent multiple concurrent connection attempts
     if (state.isConnecting || state.socket?.readyState === WebSocket.CONNECTING) {
-      console.log('WebSocket connection attempt already in progress.');
+      console.log('[WS Client] connectWebSocket: Connection attempt already in progress.');
       return;
     }
+    console.log('[WS Client] connectWebSocket: Starting connection attempt.');
 
     // Resetting attempts slightly differently:
     // If max attempts reached, keep the attempt count high for max delay,
@@ -81,16 +82,14 @@ export const createWebSocketSlice: StateCreator<
 
     try {
       const tokens = await getAuthTokens();
-      // Use identityToken for WS auth as per server logic in `websocket/auth.ts`
       const token = tokens.identityToken;
 
       if (!token) {
-           console.error("No identity token found. Cannot authenticate WebSocket.");
-           // Don't attempt to connect without a token. Let the UI handle sign-in.
+           console.error("[WS Client] connectWebSocket: No identity token found. Cannot authenticate WebSocket.");
            set(state => { state.isConnecting = false; });
-           // Optionally trigger sign-out flow or show error message
            return;
       }
+      console.log(`[WS Client] connectWebSocket: Using identity token starting with ${token.substring(0, 8)}...`);
 
       // Ensure previous socket is cleaned up
       const existingSocket = state.socket;
@@ -107,37 +106,40 @@ export const createWebSocketSlice: StateCreator<
         await new Promise(resolve => setTimeout(resolve, 50));
       }
 
-      const connectionUrl = WS_URL; // Assuming WS_URL is correctly defined
-      console.log('Connecting WebSocket to:', connectionUrl);
+      const connectionUrl = WS_URL;
+      console.log('[WS Client] connectWebSocket: Attempting to connect to:', connectionUrl);
       const ws = new WebSocket(connectionUrl);
       let connectionTimeout: NodeJS.Timeout | null = null;
 
-      // Set socket immediately in state to prevent race conditions
+      // Set socket immediately
       set((state) => { state.socket = ws; });
+      console.log('[WS Client] connectWebSocket: WebSocket instance created.');
 
       ws.onopen = async () => {
         if (connectionTimeout) clearTimeout(connectionTimeout);
-        console.log('WebSocket Connected');
+        console.log('[WS Client] WebSocket Event: onopen - Connected');
 
         set((state) => {
-          state.reconnectAttempts = 0; // Reset attempts on successful connection
+          state.reconnectAttempts = 0;
           state.isConnecting = false;
-          // state.socket = ws; // Already set
         });
 
         // Send authentication message
         try {
-          ws.send(JSON.stringify({ type: 'auth', token: token }));
-          console.log('Sent authentication token via WebSocket message.');
+           const authMessage = JSON.stringify({ type: 'auth', token: token });
+           console.log('[WS Client] WebSocket Event: onopen - Sending authentication message...');
+          ws.send(authMessage);
+           console.log('[WS Client] WebSocket Event: onopen - Authentication message sent.');
         } catch (sendError) {
-           console.error('Failed to send auth message:', sendError);
-           ws.close(4001, 'Failed to send auth'); // Close with specific code if auth send fails
+           console.error('[WS Client] WebSocket Event: onopen - Failed to send auth message:', sendError);
+           ws.close(4001, 'Failed to send auth');
            return;
         }
 
-        // Restore subscriptions after successful authentication
+        // Restore subscriptions
         try {
           const storedTopics = await AsyncStorage.getItem('websocket_subscriptions');
+           console.log(`[WS Client] WebSocket Event: onopen - Checking stored subscriptions: ${storedTopics ? 'Found' : 'None found'}`);
           if (storedTopics) {
             const topics = JSON.parse(storedTopics) as string[];
             console.log(`Restoring ${topics.length} subscriptions...`);
@@ -153,32 +155,35 @@ export const createWebSocketSlice: StateCreator<
             });
           }
         } catch (e: unknown) {
-          console.error('Error restoring subscriptions:', e instanceof Error ? e.message : e);
+          console.error('[WS Client] WebSocket Event: onopen - Error restoring subscriptions:', e instanceof Error ? e.message : e);
         }
       };
 
       ws.onmessage = (event) => {
+         console.log('[WS Client] WebSocket Event: onmessage - Received data.');
         try {
           const message = JSON.parse(event.data) as WebSocketMessage;
 
+           console.log(`[WS Client] WebSocket Event: onmessage - Parsed message type: ${message.type}`);
+
           if (__DEV__) {
-              // More selective logging for noisy messages
               if (!['pong'].includes(message.type)) {
-                  console.log('WebSocket message received:', JSON.stringify(message, null, 2));
+                  console.log('[WS Client] WebSocket Event: onmessage - Message Payload:', JSON.stringify(message, null, 2));
               }
           }
 
-          // Handle specific message types if needed (e.g., forced logout)
-          if (message.type === 'error' && message.payload?.error?.includes('Authentication failed')) {
-             console.error("WebSocket authentication failed on server:", message.payload.error);
-             // Optionally trigger logout or show specific error to user
+          // Handle specific message types (like auth_success)
+           if (message.type === 'auth_success') {
+                console.log(`[WS Client] WebSocket Event: onmessage - Authentication successful. User ID: ${message.userId}`);
+           } else if (message.type === 'subscription_confirmed') {
+                console.log(`[WS Client] WebSocket Event: onmessage - Subscription confirmed for topic: ${message.payload.topic}`);
+           } else if (message.type === 'error' && message.payload?.error?.includes('Authentication failed')) {
+             console.error("[WS Client] WebSocket Event: onmessage - Server reported Authentication failed:", message.payload.error);
           }
 
           // --- Simplified Message Storage ---
           set((state) => {
-            // Append new message
             state.wsMessages.push(message);
-            // Enforce max length by slicing
             if (state.wsMessages.length > MAX_WS_MESSAGES) {
               state.wsMessages = state.wsMessages.slice(-MAX_WS_MESSAGES);
             }
@@ -186,13 +191,13 @@ export const createWebSocketSlice: StateCreator<
           // --- End Simplified Message Storage ---
 
         } catch (error) {
-          console.error('Failed to parse WebSocket message:', error, 'Raw data:', event.data);
+          console.error('[WS Client] WebSocket Event: onmessage - Failed to parse message:', error, 'Raw data:', event.data);
         }
       };
 
       ws.onclose = (event) => {
         if (connectionTimeout) clearTimeout(connectionTimeout);
-        console.log(`WebSocket Closed: Code ${event.code}, Reason: ${event.reason || 'No reason'}`);
+        console.log(`[WS Client] WebSocket Event: onclose - Code ${event.code}, Reason: ${event.reason || 'No reason'}`);
 
         // Avoid scheduling reconnect if this socket instance is already replaced
         if (get().socket !== ws) {
@@ -252,10 +257,11 @@ export const createWebSocketSlice: StateCreator<
         }
       };
 
-      ws.onerror = (event: Event) => {
+      ws.onerror = (event: Event | { message?: string }) => {
          if (connectionTimeout) clearTimeout(connectionTimeout);
-         // Log a generic error message as 'Event' doesn't guarantee a 'message' property
-         console.error('WebSocket Error Event occurred:', event); // Log the event itself or a generic message
+         // Try to get a message, otherwise log generic
+         const errorMessage = (event as { message?: string }).message || 'WebSocket Error Event occurred';
+         console.error(`[WS Client] WebSocket Event: onerror - ${errorMessage}`, event);
 
          // Avoid scheduling reconnect if this socket instance is already replaced
          if (get().socket !== ws) {
@@ -273,16 +279,15 @@ export const createWebSocketSlice: StateCreator<
 
       // Connection Timeout handler
       connectionTimeout = setTimeout(() => {
-        connectionTimeout = null; // Clear the timeout handle
+        connectionTimeout = null;
         if (ws.readyState === WebSocket.CONNECTING) {
-           console.warn('WebSocket connection timed out. Closing socket.');
-           ws.close(4008, 'Connection timeout'); // Use a specific code for timeout
+           console.warn('[WS Client] connectWebSocket: Connection timed out after 15s. Closing socket.');
+           ws.close(4008, 'Connection timeout');
         }
-        // If already open or closed, do nothing.
-      }, 15000); // 15 seconds connection timeout
+      }, 15000);
 
     } catch (error) {
-      console.error('Failed to initiate WebSocket connection:', error);
+      console.error('[WS Client] connectWebSocket: Failed to initiate connection:', error);
       set((state) => {
         state.isConnecting = false;
         // Ensure socket state is cleared on initial setup error
@@ -308,6 +313,7 @@ export const createWebSocketSlice: StateCreator<
   },
 
   subscribeToConversation: async (conversationId: string) => {
+     console.log(`[WS Client] subscribeToConversation: Requesting subscription for conversation: ${conversationId}`);
     const state = get();
     const socket = state.socket;
     const topic = `conversation:${conversationId}`;
@@ -319,32 +325,35 @@ export const createWebSocketSlice: StateCreator<
       if (!topics.includes(topic)) {
         topics.push(topic);
         await AsyncStorage.setItem('websocket_subscriptions', JSON.stringify(topics));
-        console.log(`Stored subscription request for ${topic}`);
+        console.log(`[WS Client] subscribeToConversation: Stored subscription request for ${topic}`);
       }
     } catch (e: unknown) {
-      console.error('Failed to store subscription request:', e instanceof Error ? e.message : e);
+      console.error('[WS Client] subscribeToConversation: Failed to store subscription request:', e instanceof Error ? e.message : e);
     }
     // --- End manage stored subscriptions ---
 
     if (socket?.readyState === WebSocket.OPEN) {
       try {
-        socket.send(
-          JSON.stringify({
-            type: 'subscribe',
-            topic: topic,
-          })
-        );
-        console.log(`Sent subscription request for ${topic}`);
+         const subscribeMessage = JSON.stringify({ type: 'subscribe', topic: topic });
+         console.log(`[WS Client] subscribeToConversation: Sending subscribe message for ${topic}`);
+        socket.send(subscribeMessage);
+         console.log(`[WS Client] subscribeToConversation: Subscribe message sent for ${topic}`);
       } catch (e) {
-         console.error(`Failed to send subscribe message for ${topic}:`, e);
-         // Optionally: queue the subscription request for later retry if send fails
+         console.error(`[WS Client] subscribeToConversation: Failed to send subscribe message for ${topic}:`, e);
       }
     } else {
-      console.log(`Socket not open, subscription to ${topic} will be sent automatically upon connection/reconnection.`);
-      // Ensure connection attempt if socket is closed or null
+       // Map readyState number to string name
+       const readyStateMap: { [key: number]: string } = {
+         [WebSocket.CONNECTING]: 'CONNECTING',
+         [WebSocket.OPEN]: 'OPEN',
+         [WebSocket.CLOSING]: 'CLOSING',
+         [WebSocket.CLOSED]: 'CLOSED',
+       };
+       const socketState = socket ? (readyStateMap[socket.readyState] ?? 'UNKNOWN') : 'null';
+       console.log(`[WS Client] subscribeToConversation: Socket not open (state: ${socketState}). Subscription to ${topic} will be sent upon connection/reconnection.`);
       if (!socket || socket.readyState === WebSocket.CLOSED) {
-         console.log("Socket is closed, attempting to reconnect to send subscription.");
-         get().connectWebSocket(); // Attempt to connect if not already connecting
+         console.log("[WS Client] subscribeToConversation: Socket is closed, attempting to reconnect to send subscription.");
+         get().connectWebSocket();
       }
     }
   },
