@@ -16,6 +16,13 @@
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "appleId": "whowonai@gmail.com",
+        "appleTeamId": "Z2Q563NWA3",
+        "ascAppId": "6743567063",
+        "sku": "VIBE-AI-01"
+      }
+    }
   }
 }

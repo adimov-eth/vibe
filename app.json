@@ -12,7 +12,7 @@
     "ios": {
       "jsEngine": "jsc",
       "supportsTablet": true,
-      "bundleIdentifier": "com.adimov.vibecheck",
+      "bundleIdentifier": "com.three30.vibecheck"
     },
     "android": {
       "adaptiveIcon": {
@@ -23,7 +23,7 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
-      "package": "com.adimov.vibecheck"
+      "package": "com.three30.vibecheck"
     },
     "web": {
       "bundler": "metro",
@@ -33,7 +33,6 @@
     "plugins": [
       "react-native-iap",
       "expo-router",
-      "expo-apple-authentication",
       [
         "expo-splash-screen",
         {
@@ -59,9 +58,9 @@
         "origin": false
       },
       "eas": {
-        "projectId": "e4b31cdd-792b-423d-985a-f946e5de6768"
+        "projectId": "01a5a352-a6fd-45a5-b773-0406f2202c84"
       }
     },
-    "owner": "adimov"
+    "owner": "three30"
   }
 }
