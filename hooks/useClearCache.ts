@@ -37,7 +37,7 @@ export const useClearCache = () => {
               deletedFilesCount++;
             }
           } catch (deleteError) {
-            console.warn(`[useClearCache] Failed to delete audio file ${result.audioUri}:`, deleteError);
+            console.warn(`[useClearCache] Failed to delete specific audio file ${result.audioUri}:`, deleteError);
           }
         }
       }
@@ -65,25 +65,46 @@ export const useClearCache = () => {
       }
 
 
-      // 6. Clear Expo's general cache directory (optional, might remove other useful cache)
-      // This is less critical now that we target specific audio files. Keep it for general cleanup.
-      console.log("[useClearCache] Attempting to clear Expo FileSystem cache directory...");
+      // 6. Clear contents of Expo's general cache directory
+      console.log("[useClearCache] Attempting to clear contents of Expo FileSystem cache directory...");
       const cacheDir = FileSystem.cacheDirectory;
       if (cacheDir) {
-        await FileSystem.deleteAsync(cacheDir, { idempotent: true });
-        // Recreate the directory structure Expo might need
-        await FileSystem.makeDirectoryAsync(cacheDir, { intermediates: true });
-        console.log("[useClearCache] Cleared and recreated Expo cache directory.");
+          console.log(`[useClearCache] Cache directory identified: ${cacheDir}`);
+          try {
+              const items = await FileSystem.readDirectoryAsync(cacheDir);
+              if (items.length > 0) {
+                  console.log(`[useClearCache] Found ${items.length} items in cache directory. Deleting...`);
+                  let deletedCount = 0;
+                  for (const item of items) {
+                      const itemPath = `${cacheDir}${item}`; // Construct full path
+                      try {
+                          await FileSystem.deleteAsync(itemPath, { idempotent: true });
+                          deletedCount++;
+                      } catch (itemDeleteError) {
+                          console.warn(`[useClearCache] Failed to delete cache item: ${itemPath}`, itemDeleteError);
+                      }
+                  }
+                   console.log(`[useClearCache] Deleted ${deletedCount}/${items.length} items from cache directory.`);
+              } else {
+                   console.log("[useClearCache] Cache directory is empty. No items to delete.");
+              }
+          } catch (readDirError) {
+              // Log the specific error encountered during directory read/delete
+              const errorMsg = readDirError instanceof Error ? readDirError.message : String(readDirError);
+              console.warn(`[useClearCache] Could not clear cache directory contents: ${errorMsg}`);
+              // Don't throw an error to the user for this step failing
+          }
       } else {
-          console.warn("[useClearCache] Could not determine cache directory.");
+          console.warn("[useClearCache] Could not determine cache directory. Skipping step 6.");
       }
 
-      console.log("[useClearCache] Cache clearing process finished successfully.");
+      console.log("[useClearCache] Cache clearing process finished.");
 
     } catch (err) {
+      // Catch errors from critical steps (state clearing, AsyncStorage)
       const errorMessage = err instanceof Error ? err.message : String(err);
-      console.error('[useClearCache] Failed to clear cache:', errorMessage);
-      setError('Failed to clear cache. Please try again.');
+      console.error('[useClearCache] Critical error during cache clearing:', errorMessage);
+      setError('Failed to clear essential cache data. Please try again.');
     } finally {
       setIsClearing(false);
     }
