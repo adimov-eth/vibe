@@ -7,17 +7,32 @@ import { useUsage } from "./useUsage";
 
 interface UseRecordingFlowProps {
   modeId: string;
-  onComplete: (conversationId: string) => void;
+  // No callback prop needed
 }
 
-export const useRecordingFlow = ({ modeId, onComplete }: UseRecordingFlowProps) => {
+// Define the return type of the hook
+interface RecordingFlowResult {
+  localId: string;
+  recordMode: 'separate' | 'live';
+  currentPartner: 1 | 2;
+  isRecording: boolean;
+  isProcessingLocally: boolean;
+  isFlowCompleteLocally: boolean; // Signal local completion
+  handleToggleMode: (index: number) => void;
+  handleToggleRecording: () => Promise<void>;
+  error: string | null;
+  cleanup: () => Promise<void>;
+}
+
+export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFlowResult => {
   // Local state
   const [localId] = useState(Crypto.randomUUID());
   const [recordMode, setRecordMode] = useState<'separate' | 'live'>('separate');
   const [currentPartner, setCurrentPartner] = useState<1 | 2>(1);
   const [isRecording, setIsRecording] = useState(false);
   const [recordings, setRecordings] = useState<string[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
+  const [isProcessingLocally, setIsProcessingLocally] = useState(false);
+  const [isFlowCompleteLocally, setIsFlowCompleteLocally] = useState(false); // New state
   const [error, setError] = useState<string | null>(null);
   const [recordingObject, setRecordingObject] = useState<Audio.Recording | null>(null);
   const [permissionStatus, setPermissionStatus] = useState<Audio.PermissionStatus | null>(null);
@@ -104,62 +119,93 @@ export const useRecordingFlow = ({ modeId, onComplete }: UseRecordingFlowProps) 
       });
       setRecordings([]);
     }
+    setIsFlowCompleteLocally(false); // Reset on cleanup
   };
 
   // Toggle recording mode
   const handleToggleMode = (index: number) => {
-    if (isRecording || isUploading) return;
+    if (isRecording || isProcessingLocally || isFlowCompleteLocally) return; // Prevent mode change if waiting for upload
     setRecordMode(index === 0 ? 'separate' : 'live');
     setRecordings([]);
     setCurrentPartner(1);
     setError(null);
+    setIsFlowCompleteLocally(false); // Reset completion
   };
 
   // Start/stop recording with enhanced error handling
   const handleToggleRecording = async () => {
     if (isRecording) {
       try {
+        setIsProcessingLocally(true);
+        setIsRecording(false);
         await recordingObject?.stopAndUnloadAsync();
         const uri = recordingObject?.getURI();
         if (!uri) throw new Error('Recording URI not found');
+
+        console.log(`[useRecordingFlow] Recording stopped. URI: ${uri}`);
+
         setRecordings((prev) => [...prev, uri]);
+        setRecordingObject(null);
 
         const audioKey = recordMode === 'live' ? 'live' : currentPartner.toString();
-        store.addPendingUpload(localId, uri, audioKey);
 
-        if (recordMode === 'separate' && currentPartner === 1) {
-          setCurrentPartner(2);
-        } else {
-          setIsUploading(true);
-          if (store.localToServerIds[localId]) {
-            store.processPendingUploads(localId);
-          }
+        if (!store.localToServerIds[localId]) {
+           console.warn(`[useRecordingFlow] Server ID for local ID ${localId} not found when adding pending upload. Conversation creation might be pending.`);
+           // Ensure conversation creation was at least initiated
+            if (recordings.length === 1 && currentPartner === 1) { // Should have been created on first recording start
+                 console.error("[useRecordingFlow] Critical: Server ID missing after first recording stopped.");
+                 // Consider throwing error or setting an error state
+            }
         }
-        setIsRecording(false);
-        setRecordingObject(null);
+
+        await store.addPendingUpload(localId, uri, audioKey);
+        console.log(`[useRecordingFlow] Added pending upload for localId ${localId}, audioKey ${audioKey}`);
+
+        const isLastRecordingStep = !(recordMode === 'separate' && currentPartner === 1);
+
+        if (isLastRecordingStep) {
+           console.log('[useRecordingFlow] Last recording step finished locally. Setting isFlowCompleteLocally=true.');
+           setIsFlowCompleteLocally(true); // Signal local completion
+        } else {
+          setCurrentPartner(2);
+          console.log('[useRecordingFlow] Separate mode: Switched to Partner 2.');
+        }
+        setIsProcessingLocally(false);
+
       } catch (err) {
         setError('Failed to stop recording');
-        console.error(err);
-        await cleanup();
+        console.error('[useRecordingFlow] Error stopping recording:', err);
+        await cleanup(); // Use stable cleanup
+        setIsProcessingLocally(false);
+        setIsFlowCompleteLocally(false); // Ensure reset on error
       }
     } else {
       try {
+        setIsFlowCompleteLocally(false); // Reset completion state
+        setIsProcessingLocally(false);
+        setError(null);
+
         const canCreate = await checkCanCreateConversation();
         if (!canCreate) {
-          setError('Usage limit reached or subscription required');
-          return;
+          setError('Usage limit reached or subscription required'); return;
         }
-
         const hasPermission = await checkPermissions();
         if (!hasPermission) {
-          setError('Microphone permission denied');
-          return;
+          setError('Microphone permission denied'); return;
         }
 
-        if (recordings.length === 0) {
-          await store.createConversation(modeId, recordMode, localId);
+        // Create conversation only if it's the very first recording
+        if (recordings.length === 0 && currentPartner === 1) {
+           console.log(`[useRecordingFlow] First recording started. Creating conversation with localId: ${localId}`);
+           // Initiate creation, don't necessarily wait
+           store.createConversation(modeId, recordMode, localId)
+             .catch(err => {
+                 console.error("[useRecordingFlow] Failed to initiate conversation creation:", err);
+                 setError("Failed to create conversation session.");
+             });
         }
 
+        console.log('[useRecordingFlow] Preparing and starting recording...');
         const recording = new Audio.Recording();
         await recording.prepareToRecordAsync({
           ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
@@ -180,29 +226,15 @@ export const useRecordingFlow = ({ modeId, onComplete }: UseRecordingFlowProps) 
         await recording.startAsync();
         setRecordingObject(recording);
         setIsRecording(true);
-        setError(null);
+        console.log('[useRecordingFlow] Recording started successfully.');
+
       } catch (err) {
         setError('Failed to start recording');
-        console.error(err);
-        await cleanup();
+        console.error('[useRecordingFlow] Error starting recording:', err);
+        await cleanup(); // Use stable cleanup
       }
     }
   };
-
-  // Monitor upload completion
-  useEffect(() => {
-    const serverId = store.localToServerIds[localId];
-    if (!serverId || !isUploading) return;
-
-    const requiredUploads = recordMode === 'live' ? 1 : 2;
-    const successfulUploads = Object.keys(store.uploadResults).filter((uploadId) => {
-      return uploadId.startsWith(serverId) && store.uploadResults[uploadId]?.success;
-    }).length;
-
-    if (successfulUploads === requiredUploads) {
-      onComplete(serverId);
-    }
-  }, [store.localToServerIds, store.uploadResults, localId, recordMode, isUploading, onComplete]);
 
   // Monitor permission changes
   useEffect(() => {
@@ -236,14 +268,15 @@ export const useRecordingFlow = ({ modeId, onComplete }: UseRecordingFlowProps) 
   }, [stableCleanup]);
 
   return {
+    localId,
     recordMode,
     currentPartner,
     isRecording,
-    isUploading,
+    isProcessingLocally,
+    isFlowCompleteLocally, // <-- Return new state
     handleToggleMode,
     handleToggleRecording,
     error,
     cleanup: stableCleanup,
-    uploadProgress: store.uploadProgress[`${store.localToServerIds[localId]}_${recordMode === 'live' ? 'live' : currentPartner}`] || 0,
   };
 }; 
