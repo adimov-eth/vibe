@@ -41,6 +41,7 @@ export default function Authenticate() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${identityToken}`,
         },
         body: JSON.stringify({
           identityToken,
