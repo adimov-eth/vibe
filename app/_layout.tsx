@@ -1,5 +1,6 @@
 import ErrorDisplay from '@/components/layout/ErrorDisplay';
 import { ToastProvider } from "@/components/ui/Toast";
+import useStore from '@/state';
 import { registerBackgroundUploadTask } from '@/utils/background-upload';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -14,6 +15,7 @@ SplashScreen.preventAutoHideAsync();
 
 const NavigationLayout = () => {
   const [appIsReady, setAppIsReady] = useState(false);
+  const initializeUploads = useStore(state => state.initializeUploads);
 
   useEffect(() => {
     async function prepare() {
@@ -32,8 +34,15 @@ const NavigationLayout = () => {
       }
     }
 
+    console.log("[RootLayout] Component mounted. Initializing uploads and registering background task...");
+    // Initialize pending uploads check/retry
+    initializeUploads();
+
+    // Ensure the background task itself is registered
+    registerBackgroundUploadTask();
+
     prepare();
-  }, []);
+  }, [initializeUploads]); // Run once on mount
 
   if (!appIsReady) {
     return null;
@@ -56,6 +65,7 @@ const NavigationLayout = () => {
           }} 
         />
         <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
       </Stack>
       <ErrorDisplay />
     </>

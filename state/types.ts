@@ -209,13 +209,19 @@ export interface UploadSlice {
   uploadResults: { [uploadId: string]: UploadResult };
   pendingUploads: PendingUpload[];
   localToServerIds: { [localConversationId: string]: string };
-  uploadAudio: (audioUri: string, conversationId: string, audioKey: string, localConversationId?: string) => Promise<void>;
+  initializeUploads: () => Promise<void>;
+  uploadAudio: (
+    audioUri: string,
+    conversationId: string,
+    audioKey: string,
+    localConversationId?: string,
+    isPersistedRetry?: boolean
+  ) => Promise<void>;
   addPendingUpload: (localConversationId: string, audioUri: string, audioKey: string) => void;
-  processPendingUploads: (localConversationId: string) => void;
+  processPendingUploads: (localConversationId: string) => Promise<void>;
   setLocalToServerId: (localId: string, serverId: string) => void;
   clearUploadState: (conversationId: string) => void;
   retryUpload: (uploadId: string) => void;
-  initializeBackgroundUpload: () => Promise<void>;
 }
 
 export interface SubscriptionProduct {
