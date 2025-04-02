@@ -90,11 +90,13 @@ export const useConversationResult = (conversationId: string) => {
         // for this conversation, try re-subscribing
         if (socket?.readyState === WebSocket.OPEN && timeSinceLastAttempt > 5000) {
           const hasRelevantMessages = wsMessages.some(msg => {
-            const payload = msg.payload as BaseMessagePayload;
-            if (!payload) return false;
-            
-            return payload.conversationId === conversationId || 
-                   (payload.conversation?.id === conversationId);
+            // Check if the message type is one that contains conversation info before accessing payload
+            if ('payload' in msg && msg.payload) {
+              const payload = msg.payload as BaseMessagePayload; // Safe cast after check
+              return payload.conversationId === conversationId ||
+                     (payload.conversation?.id === conversationId);
+            }
+            return false; // Ignore messages without a payload relevant here
           });
           
           if (!hasRelevantMessages && isSubscribed.current) {

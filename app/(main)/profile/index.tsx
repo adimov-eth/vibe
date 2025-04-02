@@ -1,5 +1,4 @@
 import { AppBar } from '@/components/layout/AppBar';
-import { AccountSettingsCard } from '@/components/profile/AccountSettingsCard';
 import { AppDataCard } from '@/components/profile/AppDataCard';
 import { SubscriptionCard } from '@/components/profile/SubscriptionCard';
 import { Button } from '@/components/ui/Button';
@@ -28,7 +27,6 @@ export default function Profile() {
 
   const handleBackPress = () => router.back();
   const handleSignOut = async () => await signOut();
-  const navigateToUpdatePassword = () => router.push('/(main)/profile/update-password');
   const navigateToPaywall = () => router.push('/(main)/paywall');
 
   // Calculate derived values (memoize if necessary, but likely fine here)
@@ -114,12 +112,6 @@ export default function Profile() {
           />
         </Section>
 
-        <Section title="Account Settings">
-          <AccountSettingsCard
-            onUpdatePasswordPress={navigateToUpdatePassword}
-            onSignOutPress={handleSignOut}
-          />
-        </Section>
 
         <Section title="App Data">
           <AppDataCard
