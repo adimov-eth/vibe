@@ -38,7 +38,7 @@ export const getPendingUploads = async (): Promise<PendingUpload[]> => {
 };
 
 // Overwrite existing list with new list
-const setPendingUploads = async (uploads: PendingUpload[]): Promise<void> => {
+export const setPendingUploads = async (uploads: PendingUpload[]): Promise<void> => {
     try {
         await AsyncStorage.setItem(PENDING_UPLOADS_KEY, JSON.stringify(uploads));
         // Avoid logging potentially sensitive full upload list here
