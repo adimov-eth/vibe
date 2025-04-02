@@ -1,8 +1,10 @@
-import { getPendingUploads, removePendingUpload, savePendingUpload } from '@/utils/background-upload';
+import { getPendingUploads, removePendingUpload, saveOrUpdatePendingUpload } from '@/utils/background-upload';
 import { uploadFile } from '@/utils/upload-helpers';
 import * as FileSystem from 'expo-file-system';
 import { StateCreator } from 'zustand';
-import { PendingUpload, StoreState, UploadSlice } from '../types';
+import { StoreState, UploadSlice } from '../types';
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export const createUploadSlice: StateCreator<StoreState, [], [], UploadSlice> = (
   set,
@@ -10,38 +12,61 @@ export const createUploadSlice: StateCreator<StoreState, [], [], UploadSlice> = 
 ) => ({
   uploadProgress: {},
   uploadResults: {},
-  pendingUploads: [],
   localToServerIds: {},
 
   initializeUploads: async () => {
-    console.log('[UploadSlice:initializeUploads] Initializing uploads...');
+    console.log('[UploadSlice:initializeUploads] Initializing uploads from persisted state...');
     try {
       const persistedPendingUploads = await getPendingUploads();
-      console.log(`[UploadSlice:initializeUploads] Found ${persistedPendingUploads.length} persisted pending uploads from AsyncStorage.`);
+      console.log(`[UploadSlice:initializeUploads] Found ${persistedPendingUploads.length} persisted uploads from AsyncStorage.`);
+      const currentLocalToServerIds = get().localToServerIds;
 
       if (persistedPendingUploads.length > 0) {
-         console.log('[UploadSlice:initializeUploads] Attempting to process persisted pending uploads via foreground method...');
+         console.log('[UploadSlice:initializeUploads] Attempting to process persisted uploads...');
          for (const upload of persistedPendingUploads) {
-            // Attempt to derive uploadId. Need serverId if possible.
-            // If conversationId in persisted data is localId, we might need to wait for mapping.
-            // This logic assumes conversationId stored by background task IS the serverId.
-             const uploadId = `${upload.conversationId}_${upload.audioKey}`;
-             const existingResult = get().uploadResults[uploadId];
-             console.log(`[UploadSlice:initializeUploads] Processing persisted upload: ID=${uploadId}, ConvID=${upload.conversationId}, Key=${upload.audioKey}, URI=${upload.audioUri}`);
+            let serverIdToUse: string | undefined = undefined;
+            // Determine the original local ID (might be in conversationId or localConversationId)
+            // Ensure localId is string | undefined, not null
+            const localId: string | undefined = upload.localConversationId || (UUID_REGEX.test(upload.conversationId) ? undefined : upload.conversationId);
 
-             if (!existingResult || !existingResult.success) {
-                 console.log(`[UploadSlice:initializeUploads] Retrying persisted upload: ${uploadId}`);
-                 await get().uploadAudio(
-                     upload.audioUri,
-                     upload.conversationId,
-                     upload.audioKey,
-                     undefined, // LocalId might not be known here
-                     true // Indicate this is a retry
-                 );
-             } else {
-                 console.log(`[UploadSlice:initializeUploads] Skipping retry for already successful persisted upload: ${uploadId}`);
-                 await removePendingUpload(upload.conversationId, upload.audioKey);
+            // Check if conversationId IS the server ID
+            if (UUID_REGEX.test(upload.conversationId)) {
+                serverIdToUse = upload.conversationId;
+            } else if (localId) {
+                // Check map using the original local ID
+                serverIdToUse = currentLocalToServerIds[localId];
+            }
+
+            const uploadId = `${serverIdToUse || localId || 'unknown'}_${upload.audioKey}`; // Use serverId if known for unique ID
+            const existingResult = get().uploadResults[uploadId];
+
+            // console.log(`[UploadSlice:initializeUploads] Processing persisted: UploadID=${uploadId}, StoredConvID=${upload.conversationId}, OriginalLocalID=${localId || 'N/A'}, Key=${upload.audioKey}`); // Verbose
+
+            if (!serverIdToUse) {
+                // console.log(`[UploadSlice:initializeUploads] Server ID for ${localId || upload.conversationId} not yet known. Skipping immediate retry.`); // Verbose
+                continue; // Skip if server ID isn't available yet
+            }
+
+             // If already succeeded or currently in progress (progress >= 0), skip retry
+             const currentProgress = get().uploadProgress[uploadId];
+             if (existingResult?.success || (currentProgress !== undefined && currentProgress >= 0)) {
+                 // console.log(`[UploadSlice:initializeUploads] Skipping retry for already successful/in-progress persisted upload: ${uploadId}`); // Verbose
+                 // Attempt removal again in case it failed before
+                 if (existingResult?.success) {
+                      await removePendingUpload(serverIdToUse, upload.audioKey);
+                 }
+                 continue;
              }
+
+            // If we have a server ID and it hasn't succeeded/isn't in progress, attempt upload
+            console.log(`[UploadSlice:initializeUploads] Retrying persisted upload via foreground: ${uploadId}`);
+            await get().uploadAudio(
+                upload.audioUri,
+                serverIdToUse, // Pass SERVER ID
+                upload.audioKey,
+                localId, // Pass original local ID (can be undefined)
+                true // Indicate this is a retry from persisted state
+            );
          }
       }
     } catch (error) {
@@ -49,114 +74,157 @@ export const createUploadSlice: StateCreator<StoreState, [], [], UploadSlice> = 
     }
   },
 
-  setLocalToServerId: (localId: string, serverId: string) => {
+  setLocalToServerId: async (localId: string, serverId: string) => {
     console.log(`[UploadSlice:setLocalToServerId] Mapping localId ${localId} to serverId ${serverId}`);
     const previouslyUnmapped = !get().localToServerIds[localId];
     set((state) => ({
       localToServerIds: { ...state.localToServerIds, [localId]: serverId },
     }));
+
     if (previouslyUnmapped) {
-        console.log(`[UploadSlice:setLocalToServerId] First time serverId received for ${localId}. Triggering processPendingUploads.`);
-        get().processPendingUploads(localId);
+        console.log(`[UploadSlice:setLocalToServerId] First time serverId received for ${localId}. Processing associated persisted uploads.`);
+         try {
+             const persistedUploads = await getPendingUploads();
+             const uploadsForLocalId = persistedUploads.filter(
+                 // Find uploads where conversationId is the localId (meaning serverId was unknown)
+                 upload => upload.conversationId === localId
+             );
+
+             console.log(`[UploadSlice:setLocalToServerId] Found ${uploadsForLocalId.length} persisted uploads originally saved with localId ${localId}.`);
+
+             for (const upload of uploadsForLocalId) {
+                 // Update the record in AsyncStorage with the server ID
+                 await saveOrUpdatePendingUpload({
+                     // Pass existing data, but update conversationId and ensure localConversationId is set
+                     ...upload,
+                     conversationId: serverId, // Update to server ID
+                     localConversationId: localId, // Store the original local ID
+                 });
+                 console.log(`[UploadSlice:setLocalToServerId] Updated AsyncStorage record for key ${upload.audioKey} with serverId ${serverId}.`);
+
+
+                 // Check if already successful/in progress before triggering foreground upload
+                 const uploadId = `${serverId}_${upload.audioKey}`;
+                 const existingResult = get().uploadResults[uploadId];
+                 const currentProgress = get().uploadProgress[uploadId];
+                 if (existingResult?.success || (currentProgress !== undefined && currentProgress >= 0)) {
+                      console.log(`[UploadSlice:setLocalToServerId] Skipping foreground trigger for already successful/in-progress upload: ${uploadId}`);
+                       if (existingResult?.success) {
+                            await removePendingUpload(serverId, upload.audioKey); // Attempt removal again
+                       }
+                      continue;
+                 }
+
+                 // Trigger foreground upload attempt now
+                 console.log(`[UploadSlice:setLocalToServerId] Triggering foreground upload for ${uploadId}`);
+                 await get().uploadAudio(
+                     upload.audioUri,
+                     serverId,
+                     upload.audioKey,
+                     localId, // Pass original local ID
+                     true // Mark as persisted retry
+                 );
+             }
+         } catch (error) {
+             console.error(`[UploadSlice:setLocalToServerId] Error processing persisted uploads for ${localId}:`, error);
+         }
     } else {
-        console.log(`[UploadSlice:setLocalToServerId] ServerId for ${localId} was already known. No action needed.`);
+        console.log(`[UploadSlice:setLocalToServerId] ServerId for ${localId} was already known. No immediate action needed.`);
     }
   },
 
-  addPendingUpload: async (localConversationId: string, audioUri: string, audioKey: string) => {
-    console.log(`[UploadSlice:addPendingUpload] Called for localId: ${localConversationId}, key: ${audioKey}`);
-    const newPending: PendingUpload = { localConversationId, audioUri, audioKey };
-    set((state) => ({
-      pendingUploads: [...state.pendingUploads, newPending],
-    }));
-    console.log(`[UploadSlice:addPendingUpload] Added to in-memory pendingUploads state. Current count: ${get().pendingUploads.length}`);
+  // Renamed from addPendingUpload
+  saveUploadIntent: async (localConversationId: string, audioUri: string, audioKey: string) => {
+    console.log(`[UploadSlice:saveUploadIntent] Called for localId: ${localConversationId}, key: ${audioKey}`);
 
     const serverId = get().localToServerIds[localConversationId];
+
+    // Always save/update AsyncStorage first
+    await saveOrUpdatePendingUpload({
+       conversationId: serverId || localConversationId, // Use serverId if known, else localId
+       localConversationId: localConversationId, // Always pass the original local ID for finding/updating
+       audioUri,
+       audioKey
+    });
+     console.log(`[UploadSlice:saveUploadIntent] Saved/Updated intent in AsyncStorage. Target ConvID: ${serverId || localConversationId}, Key: ${audioKey}`);
+
+    // If server ID is known, attempt immediate foreground upload
     if (serverId) {
-       console.log(`[UploadSlice:addPendingUpload] ServerId ${serverId} known for ${localConversationId}. Attempting immediate foreground upload via uploadAudio.`);
-       await get().uploadAudio(audioUri, serverId, audioKey, localConversationId);
+       console.log(`[UploadSlice:saveUploadIntent] ServerId ${serverId} known. Attempting immediate foreground upload.`);
+       const uploadId = `${serverId}_${audioKey}`;
+       const existingResult = get().uploadResults[uploadId];
+       const currentProgress = get().uploadProgress[uploadId];
+
+       if (existingResult?.success || (currentProgress !== undefined && currentProgress >= 0)) {
+           console.log(`[UploadSlice:saveUploadIntent] Skipping foreground upload for already successful/in-progress item: ${uploadId}`);
+            if (existingResult?.success) {
+                await removePendingUpload(serverId, audioKey); // Attempt removal again
+            }
+       } else {
+            // Start foreground upload
+            await get().uploadAudio(audioUri, serverId, audioKey, localConversationId);
+       }
     } else {
-        console.log(`[UploadSlice:addPendingUpload] ServerId not yet known for ${localConversationId}. Saving to AsyncStorage for later processing/background task.`);
-        await savePendingUpload({
-           audioUri,
-           conversationId: localConversationId,
-           audioKey
-        });
-         console.log(`[UploadSlice:addPendingUpload] Saved to AsyncStorage with LOCAL ID: ${localConversationId}, Key: ${audioKey}`);
+        console.log(`[UploadSlice:saveUploadIntent] ServerId not yet known for ${localConversationId}. Intent saved. Background task or setLocalToServerId will handle upload.`);
     }
-  },
-
-  processPendingUploads: async (localConversationId: string) => {
-    const state = get();
-    const serverId = state.localToServerIds[localConversationId];
-    console.log(`[UploadSlice:processPendingUploads] Attempting for localId ${localConversationId}`);
-    if (!serverId) {
-        console.warn(`[UploadSlice:processPendingUploads] ServerId still not found for ${localConversationId}. Cannot process.`);
-        return;
-    }
-    console.log(`[UploadSlice:processPendingUploads] Processing session uploads for localId ${localConversationId} (mapped to serverId: ${serverId})`);
-
-    const pendingForConversation = state.pendingUploads.filter(
-      (upload) => upload.localConversationId === localConversationId
-    );
-    console.log(`[UploadSlice:processPendingUploads] Found ${pendingForConversation.length} in-memory uploads for ${localConversationId}.`);
-
-    if (pendingForConversation.length === 0) {
-        console.log(`[UploadSlice:processPendingUploads] No in-memory uploads found for ${localConversationId}, nothing to process immediately.`);
-        return;
-    }
-
-    for (const upload of pendingForConversation) {
-       console.log(`[UploadSlice:processPendingUploads] Triggering foreground upload (via uploadAudio) for session pending item: key ${upload.audioKey} for serverId ${serverId}`);
-      await state.uploadAudio(upload.audioUri, serverId, upload.audioKey, localConversationId);
-    }
-
-    set((state) => ({
-      pendingUploads: state.pendingUploads.filter(
-        (upload) => upload.localConversationId !== localConversationId
-      ),
-    }));
-     console.log(`[UploadSlice:processPendingUploads] Cleared processed in-memory pending uploads for ${localConversationId}. Remaining count: ${get().pendingUploads.length}`);
   },
 
   uploadAudio: async (
       audioUri: string,
-      conversationId: string,
+      conversationId: string, // MUST be SERVER ID here
       audioKey: string,
-      localConversationId?: string,
+      localConversationId?: string, // Original local ID (can be undefined)
       isPersistedRetry: boolean = false
   ) => {
-    const uploadId = `${conversationId}_${audioKey}`;
+    // Validate Server ID format
+    if (!UUID_REGEX.test(conversationId)) {
+        console.error(`[UploadSlice:uploadAudio] Attempted to upload with an invalid server Conversation ID: ${conversationId}. Aborting.`);
+        const tempUploadId = `${localConversationId || conversationId}_${audioKey}`;
+         set((state) => ({
+            uploadResults: { ...state.uploadResults, [tempUploadId]: { success: false, error: 'Internal Error: Invalid Server ID for upload', audioUri, conversationId, audioKey, localConversationId } },
+            uploadProgress: { ...state.uploadProgress, [tempUploadId]: -1 },
+         }));
+        return;
+    }
+
+    const uploadId = `${conversationId}_${audioKey}`; // Unique ID based on SERVER ID
     console.log(`[UploadSlice:uploadAudio] STARTING UploadId=${uploadId}, ServerConvId=${conversationId}, LocalConvId=${localConversationId || 'N/A'}, Key=${audioKey}, IsPersistedRetry=${isPersistedRetry}, URI=${audioUri}`);
 
+    // --- File Check ---
     try {
       const fileInfo = await FileSystem.getInfoAsync(audioUri);
       if (!fileInfo.exists) {
-          console.error(`[UploadSlice:uploadAudio] File does not exist, cannot upload: ${audioUri}`);
+          console.error(`[UploadSlice:uploadAudio] File does not exist: ${audioUri}`);
           set((state) => ({
-            uploadResults: {
-              ...state.uploadResults,
-              [uploadId]: { success: false, error: 'Local file missing', audioUri, conversationId, audioKey, localConversationId },
-            },
+            uploadResults: { ...state.uploadResults, [uploadId]: { success: false, error: 'Local file missing', audioUri, conversationId, audioKey, localConversationId } },
             uploadProgress: { ...state.uploadProgress, [uploadId]: -1 },
           }));
-          await removePendingUpload(conversationId, audioKey);
+          await removePendingUpload(conversationId, audioKey); // Remove from AsyncStorage if file missing
           return;
       }
     } catch (infoError) {
-        console.error(`[UploadSlice:uploadAudio] Error checking file existence for ${audioUri}:`, infoError);
+        // Check if infoError is an Error instance
+        const errorMessage = infoError instanceof Error ? infoError.message : String(infoError);
+        console.error(`[UploadSlice:uploadAudio] Error checking file existence for ${audioUri}:`, errorMessage);
+        set((state) => ({
+            uploadResults: { ...state.uploadResults, [uploadId]: { success: false, error: `File check error: ${errorMessage}`, audioUri, conversationId, audioKey, localConversationId } },
+            uploadProgress: { ...state.uploadProgress, [uploadId]: -1 },
+        }));
+        // Don't remove from AsyncStorage here, could be temporary issue
+        return;
     }
 
+    // --- Perform Upload ---
     try {
       set((state) => ({
          uploadProgress: { ...state.uploadProgress, [uploadId]: 0 },
-         uploadResults: { ...state.uploadResults, [uploadId]: { success: false, error: undefined } }
+         uploadResults: { ...state.uploadResults, [uploadId]: { success: false, error: undefined, audioUri, conversationId, audioKey, localConversationId } }
       }));
 
-      console.log(`[UploadSlice:uploadAudio] Calling uploadFile helper for ${uploadId}`);
+      // console.log(`[UploadSlice:uploadAudio] Calling uploadFile helper for ${uploadId}`); // Verbose
       const result = await uploadFile({
         audioUri,
-        conversationId,
+        conversationId, // Pass SERVER ID
         audioKey,
         onProgress: (progress) => {
           set((state) => ({
@@ -165,41 +233,22 @@ export const createUploadSlice: StateCreator<StoreState, [], [], UploadSlice> = 
         },
       });
 
-      console.log(`[UploadSlice:uploadAudio] UploadFile helper finished for ${uploadId}. Success: ${result.success}, Status Code: ${result.statusCode}, Error: ${result.error}`);
+      // console.log(`[UploadSlice:uploadAudio] UploadFile helper finished for ${uploadId}. Success: ${result.success}, Status Code: ${result.statusCode}, Error: ${result.error}`); // Verbose
 
       set((state) => ({
         uploadResults: {
           ...state.uploadResults,
-          [uploadId]: {
-            ...result,
-            audioUri,
-            conversationId,
-            audioKey,
-            localConversationId,
-          },
+          [uploadId]: { ...result, audioUri, conversationId, audioKey, localConversationId },
         },
          uploadProgress: { ...state.uploadProgress, [uploadId]: result.success ? 100 : -1 },
       }));
 
-      if (!result.success) {
-        console.error(`[UploadSlice:uploadAudio] Foreground upload FAILED for ${uploadId}: ${result.error}`);
-        if (!isPersistedRetry) {
-             console.log(`[UploadSlice:uploadAudio] Saving failed foreground upload ${uploadId} to AsyncStorage for background retry.`);
-             await savePendingUpload({ audioUri, conversationId, audioKey });
-             console.log(`[UploadSlice:uploadAudio] Saved to AsyncStorage with SERVER ID: ${conversationId}, Key: ${audioKey}`);
-        } else {
-            console.warn(`[UploadSlice:uploadAudio] Persisted retry failed for ${uploadId}. It will remain in AsyncStorage for the background task.`);
-        }
-      } else {
+      if (result.success) {
          console.log(`[UploadSlice:uploadAudio] Foreground upload SUCCESSFUL for ${uploadId}.`);
-         await removePendingUpload(conversationId, audioKey);
-         try {
-            console.log(`[UploadSlice:uploadAudio] Deleting local file ${audioUri} after successful foreground upload.`);
-            await FileSystem.deleteAsync(audioUri, { idempotent: true });
-            console.log(`[UploadSlice:uploadAudio] Deleted local file ${audioUri}.`);
-         } catch (deleteError) {
-             console.error(`[UploadSlice:uploadAudio] Failed to delete local file ${audioUri} after successful foreground upload: ${deleteError}`);
-         }
+         await removePendingUpload(conversationId, audioKey); // Remove from AsyncStorage
+      } else {
+        console.error(`[UploadSlice:uploadAudio] Foreground upload FAILED for ${uploadId}: ${result.error}`);
+         console.warn(`[UploadSlice:uploadAudio] Upload failed for ${uploadId}. Pending record should exist in AsyncStorage for background task.`);
       }
 
     } catch (error) {
@@ -208,68 +257,103 @@ export const createUploadSlice: StateCreator<StoreState, [], [], UploadSlice> = 
       set((state) => ({
         uploadResults: {
           ...state.uploadResults,
-          [uploadId]: {
-            success: false,
-            error: `Uncaught: ${errorMessage}`,
-            audioUri,
-            conversationId,
-            audioKey,
-            localConversationId,
-          },
+          [uploadId]: { success: false, error: `Uncaught: ${errorMessage}`, audioUri, conversationId, audioKey, localConversationId },
         },
          uploadProgress: { ...state.uploadProgress, [uploadId]: -1 },
       }));
-      if (!isPersistedRetry) {
-         console.log(`[UploadSlice:uploadAudio] Saving failed foreground upload ${uploadId} (due to uncaught error) to AsyncStorage for background retry.`);
-         await savePendingUpload({ audioUri, conversationId, audioKey });
-         console.log(`[UploadSlice:uploadAudio] Saved to AsyncStorage with SERVER ID: ${conversationId}, Key: ${audioKey}`);
-      } else {
-           console.warn(`[UploadSlice:uploadAudio] Persisted retry failed (due to uncaught error) for ${uploadId}. It will remain in AsyncStorage for the background task.`);
-      }
+       console.warn(`[UploadSlice:uploadAudio] Upload failed (uncaught) for ${uploadId}. Pending record should exist in AsyncStorage for background task.`);
     }
   },
 
   clearUploadState: (conversationId: string) => {
-    console.log(`[UploadSlice] clearUploadState called for ID: ${conversationId}`);
+    // Clears UI state (progress, results) but leaves AsyncStorage.
+    // conversationId can be local or server ID.
+    console.log(`[UploadSlice:clearUploadState] Clearing UI state for ID: ${conversationId}`);
     set((state) => {
       const serverId = state.localToServerIds[conversationId] || conversationId;
       const newProgress = { ...state.uploadProgress };
       const newResults = { ...state.uploadResults };
-      const uploadIds = Object.keys(newResults).filter((id) =>
-        id.startsWith(`${serverId}_`)
+
+      // Find keys related to this serverId OR original localId
+      const uploadIdsToClear = Object.keys(newResults).filter((id) =>
+        id.startsWith(`${serverId}_`) || (state.uploadResults[id]?.localConversationId === conversationId)
+      );
+      const progressIdsToClear = Object.keys(newProgress).filter((id) =>
+         id.startsWith(`${serverId}_`)
       );
 
-      if (uploadIds.length > 0) {
-          console.log(`[UploadSlice] Clearing state for ${uploadIds.length} uploads related to serverId ${serverId}`);
-          uploadIds.forEach((id) => {
-            delete newProgress[id];
-            delete newResults[id];
-          });
+      if (uploadIdsToClear.length > 0) {
+          // console.log(`[UploadSlice:clearUploadState] Clearing results state for ${uploadIdsToClear.length} uploads related to ID ${conversationId} (Server ID: ${serverId})`); // Verbose
+          uploadIdsToClear.forEach((id) => { delete newResults[id]; });
       }
+       if (progressIdsToClear.length > 0) {
+           // console.log(`[UploadSlice:clearUploadState] Clearing progress state for ${progressIdsToClear.length} uploads related to ID ${conversationId} (Server ID: ${serverId})`); // Verbose
+           progressIdsToClear.forEach((id) => { delete newProgress[id]; });
+       }
 
-      return {
-        uploadProgress: newProgress,
-        uploadResults: newResults,
-      };
+      // Does NOT clear localToServerIds mapping or AsyncStorage.
+      return { uploadProgress: newProgress, uploadResults: newResults };
     });
   },
 
   retryUpload: async (uploadId: string) => {
+    // uploadId is `${serverId}_${audioKey}`
     console.log(`[UploadSlice:retryUpload] Manual retry requested for: ${uploadId}`);
     const state = get();
-    const failedUpload = state.uploadResults[uploadId];
-    if (!failedUpload || !failedUpload.audioUri || !failedUpload.conversationId || !failedUpload.audioKey) {
-        console.warn(`[UploadSlice:retryUpload] Cannot retry upload ${uploadId}: Missing required data (audioUri, conversationId, audioKey) in stored result. Result data:`, failedUpload);
+    const failedUploadResult = state.uploadResults[uploadId];
+
+    if (!failedUploadResult) {
+         console.warn(`[UploadSlice:retryUpload] Cannot retry upload ${uploadId}: Result data not found.`);
+         return;
+     }
+    // Extract necessary info from the result
+    const { audioUri, conversationId: serverId, audioKey, localConversationId: localId } = failedUploadResult;
+
+    if (!audioUri || !serverId || !audioKey) {
+        console.warn(`[UploadSlice:retryUpload] Cannot retry upload ${uploadId}: Missing required data in stored result.`, failedUploadResult);
         return;
     }
+     // Validate Server ID format just in case
+     if (!UUID_REGEX.test(serverId)) {
+         console.error(`[UploadSlice:retryUpload] Invalid Server ID found in result for ${uploadId}: ${serverId}. Cannot retry.`);
+         return;
+     }
 
-    console.log(`[UploadSlice:retryUpload] Retrying upload ${uploadId} via foreground uploadAudio.`);
+    console.log(`[UploadSlice:retryUpload] Retrying upload ${uploadId} via foreground. ServerID=${serverId}, LocalID=${localId || 'N/A'}, Key=${audioKey}`);
+
+    // Ensure the item exists in AsyncStorage with the correct Server ID before retrying.
+    // This handles cases where the initial save might have used local ID or failed.
+    // Check if localId exists and is a string before calling saveOrUpdatePendingUpload
+    if (typeof localId === 'string') {
+        await saveOrUpdatePendingUpload({
+            conversationId: serverId,
+            localConversationId: localId, // Pass original localId
+            audioUri,
+            audioKey
+        });
+        console.log(`[UploadSlice:retryUpload] Ensured pending record exists in AsyncStorage for ${uploadId}.`);
+    } else {
+        // If localId is missing, we might not be able to reliably update/find the AsyncStorage record
+        // based on localId. However, the background task *should* have already updated it
+        // when the serverId became known. Proceed with the upload attempt, but log a warning.
+        console.warn(`[UploadSlice:retryUpload] Original localConversationId is missing for ${uploadId}. Cannot guarantee AsyncStorage record consistency, but attempting foreground upload anyway.`);
+         // Optionally, try saving just with serverId, though this might create duplicates if the background task didn't run/update yet
+         await saveOrUpdatePendingUpload({
+             conversationId: serverId,
+             // localConversationId: undefined, // Explicitly undefined
+             audioUri,
+             audioKey
+         });
+    }
+
+
+    // Call uploadAudio with isPersistedRetry = true
     await state.uploadAudio(
-      failedUpload.audioUri,
-      failedUpload.conversationId,
-      failedUpload.audioKey,
-      failedUpload.localConversationId,
-      true
+      audioUri,
+      serverId,
+      audioKey,
+      localId,
+      true // Mark as retry
     );
   },
 });

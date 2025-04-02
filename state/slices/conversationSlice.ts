@@ -31,7 +31,8 @@ export const createConversationSlice: StateCreator<
       mode: string,
       recordingType: "separate" | "live",
       localConversationId: string
-    ) => {
+    ): Promise<string> => {
+      console.log(`[ConversationSlice:createConversation] Creating conversation. LocalID=${localConversationId}, Mode=${mode}, Type=${recordingType}`);
       const authHeader = await getAuthToken();
 
       const response = await fetch(`${API_URL}/conversations`, {
@@ -43,32 +44,42 @@ export const createConversationSlice: StateCreator<
         body: JSON.stringify({ mode, recordingType }),
       });
 
-      if (!response.ok) throw new Error("Failed to create conversation");
+      if (!response.ok) {
+          const errorBody = await response.text();
+          console.error(`[ConversationSlice:createConversation] Failed to create. Status: ${response.status}, Body: ${errorBody}`);
+          throw new Error(`Failed to create conversation (Status: ${response.status})`);
+      }
 
       const data = await response.json();
       const serverConversationId = data.conversation?.id || data.conversationId;
 
+      if (!serverConversationId) {
+           console.error(`[ConversationSlice:createConversation] Server response missing conversation ID. Response:`, data);
+           throw new Error("Server did not return a conversation ID");
+      }
+       console.log(`[ConversationSlice:createConversation] Conversation created successfully. ServerID=${serverConversationId}`);
+
+
+      // Add conversation to local state immediately
       set((state) => ({
         conversations: {
           ...state.conversations,
           [serverConversationId]: {
             id: serverConversationId,
-            status: "waiting",
+            status: "waiting", // Initial status
             mode,
             recordingType,
-          } as Conversation,
-        },
-        localToServerIds: {
-          ...state.localToServerIds,
-          [localConversationId]: serverConversationId,
+          } as Conversation, // Cast to Conversation type
         },
       }));
 
-      get().processPendingUploads(localConversationId);
-      return serverConversationId;
+      // Set the mapping - this will trigger processing of any pending uploads for this local ID
+      await get().setLocalToServerId(localConversationId, serverConversationId);
+
+      return serverConversationId; // Return the server ID
     },
 
-    getConversation: async (conversationId: string) => {
+    getConversation: async (conversationId: string): Promise<Conversation> => {
       set((state) => ({
         conversationLoading: { ...state.conversationLoading, [conversationId]: true },
       }));
@@ -80,19 +91,30 @@ export const createConversationSlice: StateCreator<
           headers: { Authorization: authHeader },
         });
 
-        if (!response.ok) throw new Error("Failed to fetch conversation");
+        if (!response.ok) {
+            const errorBody = await response.text();
+            console.error(`[ConversationSlice:getConversation] Failed to fetch ${conversationId}. Status: ${response.status}, Body: ${errorBody}`);
+            throw new Error(`Failed to fetch conversation (Status: ${response.status})`);
+        }
 
         const data = await response.json();
+        // Assuming server returns the full conversation object in `data.conversation`
+        const conversationData = data.conversation as Conversation;
+        if (!conversationData || !conversationData.id) {
+             console.error(`[ConversationSlice:getConversation] Server response missing conversation data for ${conversationId}. Response:`, data);
+             throw new Error("Invalid conversation data received from server");
+        }
+
         set((state) => ({
-          conversations: { ...state.conversations, [conversationId]: data as Conversation },
+          conversations: { ...state.conversations, [conversationId]: conversationData },
           conversationLoading: { ...state.conversationLoading, [conversationId]: false },
         }));
-        return data as Conversation;
+        return conversationData;
       } catch (error) {
         set((state) => ({
           conversationLoading: { ...state.conversationLoading, [conversationId]: false },
         }));
-        throw error;
+        throw error; // Re-throw the original error
       }
     },
   };

@@ -1,3 +1,4 @@
+import * as FileSystem from 'expo-file-system';
 import { useEffect, useRef, useState } from 'react';
 import useStore from '../state/index';
 import type { AnalysisMessage, AudioMessage, ErrorMessage, StatusMessage, TranscriptMessage, WebSocketMessage } from '../state/types';
@@ -39,7 +40,55 @@ export const useConversationResult = (conversationId: string) => {
     unsubscribeFromConversation,
     clearMessages,
     clearUploadState,
+    uploadResults,
   } = useStore();
+
+  // Function to clean up local audio files associated with this conversation
+  const cleanupLocalFiles = async () => {
+    if (!conversationId) return;
+    console.log(`[useConversationResult Hook] Cleaning up local files for conversation: ${conversationId}`);
+    const results = useStore.getState().uploadResults; // Get current results state
+    const urisToDelete = new Set<string>();
+
+    // Iterate through upload results to find relevant URIs
+    Object.keys(results).forEach(uploadId => {
+        // Check if uploadId belongs to this conversation (starts with serverId_)
+        if (uploadId.startsWith(`${conversationId}_`)) {
+            const result = results[uploadId];
+            if (result?.audioUri) {
+                urisToDelete.add(result.audioUri);
+            }
+        }
+        // Also check if the result has a matching localConversationId (if applicable)
+        // This might be redundant if serverId logic works, but adds robustness
+        // const localId = getStore.getState().localToServerIds[conversationId]; // Need inverse map or check localId property
+        // if (result?.localConversationId === conversationId && result?.audioUri) {
+        //    urisToDelete.add(result.audioUri);
+        // }
+    });
+
+    if (urisToDelete.size === 0) {
+        console.log(`[useConversationResult Hook] No local audio URIs found in results state for ${conversationId} to delete.`);
+        return;
+    }
+
+    console.log(`[useConversationResult Hook] Attempting to delete ${urisToDelete.size} local files for ${conversationId}:`, Array.from(urisToDelete));
+    for (const uri of urisToDelete) {
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(uri);
+        if (fileInfo.exists) {
+          await FileSystem.deleteAsync(uri, { idempotent: true });
+          console.log(`[useConversationResult Hook] Deleted local file: ${uri}`);
+        } else {
+           console.log(`[useConversationResult Hook] Local file already deleted or missing: ${uri}`);
+        }
+      } catch (deleteError) {
+        console.error(`[useConversationResult Hook] Failed to delete local file ${uri}:`, deleteError);
+      }
+    }
+     console.log(`[useConversationResult Hook] Finished local file cleanup attempt for ${conversationId}.`);
+
+  };
 
   useEffect(() => {
     console.log(`[useConversationResult Hook] useEffect running for conversation: ${conversationId}`);

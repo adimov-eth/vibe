@@ -8,6 +8,7 @@ import { Toggle } from '@/components/ui/Toggle';
 import { colors, spacing, typography } from '@/constants/styles';
 import { useRecordingFlow } from '@/hooks';
 import useStore from '@/state'; // Import useStore
+// Import PendingUpload type
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -29,7 +30,7 @@ export default function Recording() {
   // Local UI state
   const modeId = typeof modeParam === 'string' ? modeParam : '';
   const [mode, setMode] = useState<Mode>(() => getModeDetails(modeId));
-  const [isWaitingForUpload, setIsWaitingForUpload] = useState(false); // State to track upload monitoring phase
+  // const [isWaitingForUpload, setIsWaitingForUpload] = useState(false); // <-- REMOVED
 
   // Recording flow hook
   const {
@@ -38,85 +39,32 @@ export default function Recording() {
     currentPartner,
     isRecording,
     isProcessingLocally,
-    isFlowCompleteLocally, // Get local completion signal
+    isFlowCompleteLocally, // Still needed to trigger navigation
+    isButtonDisabled,
     handleToggleMode,
     handleToggleRecording,
-    error: recordingError, // Rename to avoid clash with potential upload error state
+    error: recordingError,
     cleanup,
   } = useRecordingFlow({ modeId });
 
-  // Get relevant state from Zustand store for monitoring
+  // Get serverId mapping - needed for navigation target
   const serverId = useStore(useCallback(state => state.localToServerIds[localId], [localId]));
-  const uploadResults = useStore(state => state.uploadResults);
-  const pendingUploads = useStore(state => state.pendingUploads); // Needed to know if upload is still pending
+  // const uploadResults = useStore(state => state.uploadResults); // <-- REMOVED (monitoring moves to Results screen)
 
 
-  // Effect to start waiting for uploads when local flow is done
+  // Effect to navigate IMMEDIATELY when local flow is complete AND serverId is known
   useEffect(() => {
-    if (isFlowCompleteLocally) {
-      console.log(`[RecordingScreen] Local flow complete for localId: ${localId}. Starting to wait for uploads.`);
-      setIsWaitingForUpload(true);
-    }
-  }, [isFlowCompleteLocally, localId]);
-
-  // Effect to monitor upload status and navigate on completion
-  useEffect(() => {
-    // Only monitor if we are in the "waiting" state and have a server ID
-    if (!isWaitingForUpload || !serverId) {
-      return; // Don't monitor if not waiting or serverId not yet mapped
-    }
-
-    console.log(`[RecordingScreen] Upload Monitor: Actively monitoring uploads for serverId: ${serverId}`);
-
-    const requiredKeys = recordMode === 'live' ? ['live'] : ['1', '2'];
-    let allSuccessful = true;
-    let uploadsFound = 0;
-    let stillPending = false;
-
-    for (const key of requiredKeys) {
-      const uploadId = `${serverId}_${key}`;
-      const result = uploadResults[uploadId];
-
-      if (result) {
-        uploadsFound++;
-        if (!result.success) {
-           console.warn(`[RecordingScreen] Upload Monitor: Upload failed for ${uploadId}: ${result.error}`);
-          allSuccessful = false;
-          setIsWaitingForUpload(false); // Stop waiting on failure
-          // TODO: Display upload error to user?
-          break;
-        } else {
-           console.log(`[RecordingScreen] Upload Monitor: Upload result SUCCESS for ${uploadId}`);
-        }
-      } else {
-        // Check if it's still in pendingUploads (meaning upload hasn't finished/failed yet)
-        const isPending = pendingUploads.some(p => p.localConversationId === localId && p.audioKey === key);
-        if (isPending) {
-            console.log(`[RecordingScreen] Upload Monitor: Upload result for ${uploadId} not yet available, still pending.`);
-            stillPending = true;
-        } else {
-             console.log(`[RecordingScreen] Upload Monitor: Upload result for ${uploadId} not available and not pending.`);
-        }
-        allSuccessful = false; // Mark as not complete if result missing
-      }
-    }
-
-    // Navigate only if we found results for all required keys and all were successful
-    if (uploadsFound === requiredKeys.length && allSuccessful) {
-      console.log(`[RecordingScreen] Upload Monitor: All uploads successful for ${serverId}. Navigating...`);
-      // Ensure we stop waiting state before navigating, though component will unmount
-      setIsWaitingForUpload(false);
+    if (isFlowCompleteLocally && serverId) {
+      console.log(`[RecordingScreen] Local flow complete and serverId ${serverId} known. Navigating to results...`);
+      // Replace ensures user can't navigate back to the recording screen after completion
       router.replace(`../results/${serverId}`);
-    } else if (uploadsFound < requiredKeys.length && !stillPending) {
-        // Edge case: some results missing but none are pending? Could indicate an issue.
-        console.warn(`[RecordingScreen] Upload Monitor: Waiting for uploads, found ${uploadsFound}/${requiredKeys.length}, but none seem pending.`);
+    } else if (isFlowCompleteLocally && !serverId) {
+        console.log(`[RecordingScreen] Local flow complete but serverId for ${localId} not yet known. Waiting for mapping...`);
+        // Stay on this screen, show processing indicator. Navigation will occur once serverId is mapped.
     }
-     else {
-        console.log(`[RecordingScreen] Upload Monitor: Still waiting for uploads (Found: ${uploadsFound}/${requiredKeys.length}, AllSuccessful: ${allSuccessful}, StillPending: ${stillPending})`);
-     }
+  }, [isFlowCompleteLocally, serverId, localId, router]);
 
-  // Monitor changes in serverId mapping, upload results, pending uploads list, and waiting state
-  }, [serverId, recordMode, uploadResults, pendingUploads, localId, router, isWaitingForUpload]);
+  // Removed the upload monitoring useEffect
 
 
   // Load mode details
@@ -128,24 +76,29 @@ export default function Recording() {
   useEffect(() => {
     return () => {
       console.log("[RecordingScreen] Component unmounting. Running cleanup.");
+      // Cleanup might still involve canceling uploads if the hook manages that,
+      // but primarily handles recorder state and local temp files.
       void cleanup();
     };
   }, [cleanup]);
 
   // Determine overall error state
-  const displayError = recordingError; // Add logic here if upload errors should also be displayed
+  const displayError = recordingError;
 
   // UI Rendering Logic
-  const showProcessingIndicator = isProcessingLocally;
-  const showUploadingIndicator = isWaitingForUpload && !displayError; // Show upload wait only if actively waiting and no error
+  // Show processing indicator if processing locally OR if flow is complete but waiting for serverId mapping
+  const showProcessingIndicator = isProcessingLocally || (isFlowCompleteLocally && !serverId);
+  // const showUploadingIndicator = isWaitingForUpload && !displayError; // <-- REMOVED
+
+  const isGloballyDisabled = isButtonDisabled || showProcessingIndicator; // Simplified disable state
 
   return (
     <Container withSafeArea>
       <AppBar
         title={mode.title}
         showBackButton
-        // Disable back button while processing/uploading?
-        onBackPress={() => !(showProcessingIndicator || showUploadingIndicator) && router.back()}
+        // Disable back button while processing
+        onBackPress={() => !isGloballyDisabled && router.back()}
       />
       <View style={styles.content}>
         {/* Mode Card */}
@@ -156,7 +109,7 @@ export default function Recording() {
             title={mode.title}
             description={mode.description}
             color={mode.color}
-            onPress={() => {}} // Make non-interactive?
+            onPress={() => {}} // Non-interactive
           />
         </View>
 
@@ -169,13 +122,13 @@ export default function Recording() {
             options={['Separate', 'Live']}
             selectedIndex={recordMode === 'separate' ? 0 : 1}
             onChange={handleToggleMode}
-            // Disable toggle during recording, processing, or waiting for upload
-            disabled={isRecording || showProcessingIndicator || showUploadingIndicator}
+            // Disable toggle during recording or processing
+            disabled={isRecording || isGloballyDisabled}
           />
         </View>
 
         {/* Partner Indicator for Separate Mode */}
-        {recordMode === 'separate' && !showUploadingIndicator && ( // Hide during upload wait
+        {recordMode === 'separate' && !showProcessingIndicator && ( // Hide during processing
           <View style={styles.partnerContainer}>
             <Text style={styles.partnerText}>Partner {currentPartner}</Text>
             {currentPartner === 2 && (
@@ -189,11 +142,11 @@ export default function Recording() {
 
         {/* Recording Button and Status */}
         <View style={styles.recordingContainer}>
-          {showProcessingIndicator || showUploadingIndicator ? (
+          {showProcessingIndicator ? (
             <View style={styles.processingContainer}>
                <ActivityIndicator size="large" color={colors.primary} />
                <Text style={styles.processingText}>
-                 {showProcessingIndicator ? 'Processing...' : 'Uploading...'}
+                 {isProcessingLocally ? 'Processing...' : 'Finishing up...'}
                </Text>
             </View>
           ) : (
@@ -201,12 +154,12 @@ export default function Recording() {
               <RecordButton
                 isRecording={isRecording}
                 onPress={handleToggleRecording}
-                // Disable button if already completed locally? Handled by parent view state?
+                disabled={isGloballyDisabled}
               />
               <Text style={styles.recordingInstructions}>
                  {isRecording ? 'Recording... Tap to stop' : 'Tap to start recording'}
               </Text>
-              {displayError && ( // Show error if present
+              {displayError && (
                 <View style={styles.errorContainer}>
                   <Text style={styles.errorText}>{displayError}</Text>
                 </View>
@@ -216,8 +169,7 @@ export default function Recording() {
         </View>
 
         {/* Waveform Visualization */}
-        {/* Hide waveform when processing or uploading */}
-        {!showProcessingIndicator && !showUploadingIndicator && (
+        {!showProcessingIndicator && ( // Hide waveform during processing
             <View style={styles.waveformContainer}>
               <AudioWaveform isActive={isRecording} />
             </View>

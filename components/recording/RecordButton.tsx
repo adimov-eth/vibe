@@ -3,11 +3,11 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Reanimated, {
-    useAnimatedStyle,
-    useSharedValue,
-    withRepeat,
-    withSpring,
-    withTiming,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 
 const ReanimatedView = Reanimated.createAnimatedComponent(View);
@@ -15,15 +15,16 @@ const ReanimatedView = Reanimated.createAnimatedComponent(View);
 interface RecordButtonProps {
   isRecording: boolean;
   onPress: () => void;
+  disabled?: boolean;
 }
 
-export function RecordButton({ isRecording, onPress }: RecordButtonProps) {
+export function RecordButton({ isRecording, onPress, disabled = false }: RecordButtonProps) {
   const scale = useSharedValue(1);
   const glowOpacity = useSharedValue(0);
   const glowScale = useSharedValue(1);
 
   React.useEffect(() => {
-    if (isRecording) {
+    if (isRecording || disabled) {
       glowOpacity.value = withRepeat(
         withTiming(0.5, { duration: 1000 }),
         -1,
@@ -38,7 +39,7 @@ export function RecordButton({ isRecording, onPress }: RecordButtonProps) {
       glowOpacity.value = withSpring(0);
       glowScale.value = withSpring(1);
     }
-  }, [isRecording]);
+  }, [isRecording, disabled]);
 
   const buttonStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],

@@ -207,7 +207,6 @@ export interface WebSocketSlice {
 export interface UploadSlice {
   uploadProgress: UploadProgress;
   uploadResults: { [uploadId: string]: UploadResult };
-  pendingUploads: PendingUpload[];
   localToServerIds: { [localConversationId: string]: string };
   initializeUploads: () => Promise<void>;
   uploadAudio: (
@@ -217,11 +216,10 @@ export interface UploadSlice {
     localConversationId?: string,
     isPersistedRetry?: boolean
   ) => Promise<void>;
-  addPendingUpload: (localConversationId: string, audioUri: string, audioKey: string) => void;
-  processPendingUploads: (localConversationId: string) => Promise<void>;
-  setLocalToServerId: (localId: string, serverId: string) => void;
+  saveUploadIntent: (localConversationId: string, audioUri: string, audioKey: string) => Promise<void>;
+  setLocalToServerId: (localId: string, serverId: string) => Promise<void>;
   clearUploadState: (conversationId: string) => void;
-  retryUpload: (uploadId: string) => void;
+  retryUpload: (uploadId: string) => Promise<void>;
 }
 
 export interface SubscriptionProduct {
