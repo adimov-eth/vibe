@@ -17,9 +17,21 @@ export interface UploadProgress {
   [key: string]: number; // uploadId = `${serverConversationId}_${audioKey}`
 }
 
-export type UploadResult =
-  | { success: true; url: string }
-  | { success: false; error: string; audioUri: string; conversationId: string; audioKey: string };
+export interface PendingUpload {
+  localConversationId: string;
+  audioUri: string;
+  audioKey: string;
+}
+
+export interface UploadResult {
+  success: boolean;
+  url?: string;
+  error?: string;
+  audioUri?: string;
+  conversationId?: string;
+  audioKey?: string;
+  localConversationId?: string;
+}
 
 export interface SubscriptionStatus {
   isActive: boolean;
@@ -67,7 +79,8 @@ export type WebSocketMessageType =
   | 'subscription_confirmed' 
   | 'unsubscription_confirmed' 
   | 'pong'
-  | 'audio';
+  | 'audio'
+  | 'auth_success';
 
 // Base message interface with common fields
 export interface BaseWebSocketMessage {
@@ -143,6 +156,11 @@ export interface PongMessage extends BaseWebSocketMessage {
   };
 }
 
+export interface AuthSuccessMessage extends BaseWebSocketMessage {
+  type: 'auth_success';
+  userId: string;
+}
+
 // Union type for all WebSocket messages
 export type WebSocketMessage = 
   | TranscriptMessage
@@ -152,7 +170,8 @@ export type WebSocketMessage =
   | AudioMessage
   | ConnectionMessage
   | SubscriptionMessage
-  | PongMessage;
+  | PongMessage
+  | AuthSuccessMessage;
 
 export interface SubscriptionSlice {
   subscriptionStatus: SubscriptionStatus | null;
@@ -185,23 +204,18 @@ export interface WebSocketSlice {
   clearMessages: () => void;
 }
 
-export interface PendingUpload {
-  audioUri: string;
-  conversationId: string;
-  audioKey: string;
-  localConversationId?: string;  // Making this optional since it's not always needed
-}
-
 export interface UploadSlice {
   uploadProgress: UploadProgress;
   uploadResults: { [uploadId: string]: UploadResult };
   pendingUploads: PendingUpload[];
   localToServerIds: { [localConversationId: string]: string };
-  uploadAudio: (audioUri: string, conversationId: string, audioKey: string) => Promise<void>;
+  uploadAudio: (audioUri: string, conversationId: string, audioKey: string, localConversationId?: string) => Promise<void>;
   addPendingUpload: (localConversationId: string, audioUri: string, audioKey: string) => void;
   processPendingUploads: (localConversationId: string) => void;
   setLocalToServerId: (localId: string, serverId: string) => void;
   clearUploadState: (conversationId: string) => void;
+  retryUpload: (uploadId: string) => void;
+  initializeBackgroundUpload: () => Promise<void>;
 }
 
 export interface SubscriptionProduct {

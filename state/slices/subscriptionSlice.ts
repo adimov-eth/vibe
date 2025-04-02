@@ -1,4 +1,4 @@
-import { getClerkInstance } from '@clerk/clerk-expo';
+import { getAuthorizationHeader } from '@/utils/auth';
 import { Platform } from 'react-native';
 import {
   endConnection,
@@ -10,16 +10,35 @@ import {
   purchaseErrorListener,
   purchaseUpdatedListener,
   requestSubscription,
+  Subscription,
+  SubscriptionAndroid,
+  SubscriptionIOS,
 } from 'react-native-iap';
 import { StateCreator } from 'zustand';
-import { API_BASE_URL, StoreState, SubscriptionSlice, UsageStats } from '../types';
+import { StoreState, SubscriptionSlice, UsageStats } from '../types';
 
-export interface SubscriptionProduct {
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
+
+// Platform-specific subscription product interface
+export interface PlatformSubscriptionProduct {
   productId: string;
   title: string;
   description: string;
   price: string;
-  subscriptionOfferDetails?: { offerToken: string }[];
+  localizedPrice?: string; // iOS specific
+  subscriptionOfferDetails?: Array<{
+    offerToken: string;
+    // Add other offer details as needed
+  }>;
+}
+
+// Type guards for platform-specific products
+function isIOSSubscription(product: Subscription): product is SubscriptionIOS {
+  return Platform.OS === 'ios';
+}
+
+function isAndroidSubscription(product: Subscription): product is SubscriptionAndroid {
+  return Platform.OS === 'android';
 }
 
 export const SUBSCRIPTION_SKUS = {
@@ -59,24 +78,24 @@ export const createSubscriptionSlice: StateCreator<
   };
 
   const getAuthToken = async () => {
-    const token = await getClerkInstance().session?.getToken();
-    if (!token) throw new Error('No authentication token');
-    return token;
+    const authHeader = await getAuthorizationHeader();
+    if (!authHeader) throw new Error('No authentication token');
+    return authHeader;
   };
 
   return {
     subscriptionStatus: null,
     usageStats: null,
-    subscriptionProducts: [],
+    subscriptionProducts: [] as PlatformSubscriptionProduct[],
     subscriptionLoading: false,
     subscriptionError: null,
 
     verifySubscription: async (receiptData: string) => {
-      const token = await getAuthToken();
-      const response = await fetch(`${API_BASE_URL}/subscriptions/verify`, {
+      const authHeader = await getAuthToken();
+      const response = await fetch(`${API_URL}/subscriptions/verify`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: authHeader,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ receiptData }),
@@ -90,9 +109,9 @@ export const createSubscriptionSlice: StateCreator<
 
     checkSubscriptionStatus: async () => {
       try {
-        const token = await getAuthToken();
-        const response = await fetch(`${API_BASE_URL}/subscriptions/status`, {
-          headers: { Authorization: `Bearer ${token}` },
+        const authHeader = await getAuthToken();
+        const response = await fetch(`${API_URL}/subscriptions/status`, {
+          headers: { Authorization: authHeader },
         });
 
         if (!response.ok) throw new Error('Failed to check subscription status');
@@ -107,9 +126,9 @@ export const createSubscriptionSlice: StateCreator<
 
     getUsageStats: async () => {
       try {
-        const token = await getAuthToken();
-        const response = await fetch(`${API_BASE_URL}/usage/stats`, {
-          headers: { Authorization: `Bearer ${token}` },
+        const authHeader = await getAuthToken();
+        const response = await fetch(`${API_URL}/usage/stats`, {
+          headers: { Authorization: authHeader },
         });
 
         if (!response.ok) throw new Error('Failed to fetch usage stats');
@@ -130,24 +149,38 @@ export const createSubscriptionSlice: StateCreator<
         purchaseUpdateSubscription = purchaseUpdatedListener(handlePurchaseUpdate);
         purchaseErrorSubscription = purchaseErrorListener(handlePurchaseError);
 
-        const products = await getSubscriptions({
+        const rawProducts = await getSubscriptions({
           skus: Object.values(SUBSCRIPTION_SKUS),
         });
-        set({
-          subscriptionProducts: products.map((product) => ({
+
+        // Map raw products to our consistent PlatformSubscriptionProduct interface
+        const mappedProducts: PlatformSubscriptionProduct[] = rawProducts.map((product): PlatformSubscriptionProduct => {
+          let price = 'N/A';
+          let offerDetails: PlatformSubscriptionProduct['subscriptionOfferDetails'] | undefined = undefined;
+
+          if (isIOSSubscription(product)) {
+            // iOS-specific handling
+            price = String(product.price ?? 'N/A');
+          } else if (isAndroidSubscription(product)) {
+            // Android-specific handling
+            price = String(product.price ?? 'N/A');
+            offerDetails = product.subscriptionOfferDetails?.map(offer => ({
+              offerToken: offer.offerToken,
+            }));
+          }
+
+          return {
             productId: product.productId,
             title: product.title,
             description: product.description,
-            price:
-              Platform.OS === 'ios'
-                ? (product as any).localizedPrice || '0'
-                : String((product as any).price || 0),
-            subscriptionOfferDetails:
-              Platform.OS === 'android'
-                ? (product as any).subscriptionOfferDetails
-                : undefined,
-          })),
+            price,
+            // Only include platform-specific fields when available
+            ...(isIOSSubscription(product) && { localizedPrice: String(product.price) }),
+            ...(isAndroidSubscription(product) && { subscriptionOfferDetails: offerDetails }),
+          };
         });
+
+        set({ subscriptionProducts: mappedProducts });
 
         await Promise.all([
           get().checkSubscriptionStatus(),

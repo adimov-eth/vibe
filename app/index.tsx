@@ -1,12 +1,16 @@
-import { useAuth } from '@clerk/clerk-expo';
+import { useAuthentication } from "@/hooks/useAuthentication";
 import { Redirect } from 'expo-router';
-import React from 'react';
 
 export default function Index() {
-  const { isSignedIn } = useAuth();
-  if (isSignedIn) {
-    return <Redirect href="/home" />;
+  const { isAuthenticated, isLoading } = useAuthentication();
+  
+  if (isLoading) {
+    return null;
   }
   
-  return <Redirect href="/sign-in" />;
+  if (isAuthenticated) {
+    return <Redirect href="/(main)/home" />;
+  }
+  
+  return <Redirect href="/(auth)/authenticate" />;
 }

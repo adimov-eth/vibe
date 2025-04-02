@@ -1,8 +1,8 @@
-import { useUser } from '@clerk/clerk-expo';
+import { getAuthTokens } from '@/utils/auth';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface AppBarProps {
   title?: string;
@@ -11,6 +11,14 @@ interface AppBarProps {
   showAvatar?: boolean;
   onAvatarPress?: () => void;
   testID?: string;
+}
+
+interface UserInfo {
+  email?: string | null;
+  fullName?: {
+    givenName?: string | null;
+    familyName?: string | null;
+  };
 }
 
 export const AppBar: React.FC<AppBarProps> = ({ 
@@ -22,7 +30,23 @@ export const AppBar: React.FC<AppBarProps> = ({
   testID,
 }) => {
   const router = useRouter();
-  const { user } = useUser();
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+
+  useEffect(() => {
+    const loadUserInfo = async () => {
+      const tokens = await getAuthTokens();
+      if (tokens.email || (tokens.fullName?.givenName || tokens.fullName?.familyName)) {
+        setUserInfo({
+          email: tokens.email || undefined,
+          fullName: tokens.fullName ? {
+            givenName: tokens.fullName.givenName || undefined,
+            familyName: tokens.fullName.familyName || undefined
+          } : undefined
+        });
+      }
+    };
+    loadUserInfo();
+  }, []);
 
   const handleBackPress = () => {
     if (onBackPress) {
@@ -41,15 +65,13 @@ export const AppBar: React.FC<AppBarProps> = ({
   };
 
   const getUserInitial = () => {
-    if (user?.firstName) {
-      return user.firstName[0].toUpperCase();
-    } else if (user?.emailAddresses && user.emailAddresses[0]) {
-      return user.emailAddresses[0].emailAddress[0].toUpperCase();
+    if (userInfo?.fullName?.givenName) {
+      return userInfo.fullName.givenName[0].toUpperCase();
+    } else if (userInfo?.email) {
+      return userInfo.email[0].toUpperCase();
     }
     return '?';
   };
-
-  const hasProfileImage = user?.imageUrl ? true : false;
 
   return (
     <View style={styles.container} testID={testID}>
@@ -79,17 +101,9 @@ export const AppBar: React.FC<AppBarProps> = ({
             accessibilityLabel="User profile"
             accessibilityRole="button"
           >
-            {hasProfileImage ? (
-              <Image 
-                source={{ uri: user?.imageUrl }} 
-                style={styles.avatarImage}
-                accessibilityLabel="User profile picture" 
-              />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Text style={styles.avatarInitial}>{getUserInitial()}</Text>
-              </View>
-            )}
+            <View style={styles.avatarPlaceholder}>
+              <Text style={styles.avatarInitial}>{getUserInitial()}</Text>
+            </View>
           </TouchableOpacity>
         )}
       </View>

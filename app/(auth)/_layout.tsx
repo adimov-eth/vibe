@@ -1,22 +1,20 @@
-import { useAuth } from "@clerk/clerk-expo";
+import { useAuthentication } from "@/hooks/useAuthentication";
 import { Redirect, Stack } from 'expo-router';
-import React from 'react';
 
 export default function AuthLayout() {
-  const { isSignedIn, isLoaded } = useAuth();
+  const { isAuthenticated, isLoading } = useAuthentication();
   
-  // Show loading state
-  if (!isLoaded) {
+  if (isLoading) {
     return null;
   }
   
-  // Redirect to home if already signed in
-  if (isSignedIn) {
-    return <Redirect href="../home" />;
+  if (isAuthenticated) {
+    return <Redirect href="/(main)/home" />;
   }
   
-  return <Stack  
-    screenOptions={{
-      headerShown: false,
-    }}/>;
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="authenticate" />
+    </Stack>
+  );
 }

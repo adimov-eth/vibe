@@ -1,6 +1,8 @@
-import { getClerkInstance } from "@clerk/clerk-expo";
+import { getAuthorizationHeader } from "@/utils/auth";
 import { StateCreator } from "zustand";
-import { API_BASE_URL, Conversation, ConversationSlice, StoreState } from "../types";
+import { Conversation, ConversationSlice, StoreState } from "../types";
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export const createConversationSlice: StateCreator<
   StoreState,
@@ -9,9 +11,9 @@ export const createConversationSlice: StateCreator<
   ConversationSlice
 > = (set, get) => {
   const getAuthToken = async () => {
-    const token = await getClerkInstance().session?.getToken();
-    if (!token) throw new Error("No authentication token");
-    return token;
+    const authHeader = await getAuthorizationHeader();
+    if (!authHeader) throw new Error("No authentication token");
+    return authHeader;
   };
 
   return {
@@ -30,12 +32,12 @@ export const createConversationSlice: StateCreator<
       recordingType: "separate" | "live",
       localConversationId: string
     ) => {
-      const token = await getAuthToken();
+      const authHeader = await getAuthToken();
 
-      const response = await fetch(`${API_BASE_URL}/conversations`, {
+      const response = await fetch(`${API_URL}/conversations`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: authHeader,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ mode, recordingType }),
@@ -72,10 +74,10 @@ export const createConversationSlice: StateCreator<
       }));
 
       try {
-        const token = await getAuthToken();
+        const authHeader = await getAuthToken();
 
-        const response = await fetch(`${API_BASE_URL}/conversations/${conversationId}`, {
-          headers: { Authorization: `Bearer ${token}` },
+        const response = await fetch(`${API_URL}/conversations/${conversationId}`, {
+          headers: { Authorization: authHeader },
         });
 
         if (!response.ok) throw new Error("Failed to fetch conversation");
