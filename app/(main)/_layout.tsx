@@ -4,19 +4,23 @@ import React, { useEffect, useState } from "react";
 
 export default function MainLayout() {
   const { isAuthenticated, isLoading } = useAuthentication();
-  const [initialAuthPassed, setInitialAuthPassed] = useState<boolean | null>(null);
+  const [authStatus, setAuthStatus] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
 
   useEffect(() => {
-    if (!isLoading && initialAuthPassed === null) {
-      setInitialAuthPassed(isAuthenticated);
+    if (authStatus === 'loading' && !isLoading) {
+       if (isAuthenticated) {
+           setAuthStatus('authenticated');
+       } else {
+           setAuthStatus('unauthenticated');
+       }
     }
-  }, [isLoading, isAuthenticated, initialAuthPassed]);
+  }, [isLoading, isAuthenticated, authStatus]);
 
-  if (initialAuthPassed === null || isLoading) {
+  if (authStatus === 'loading') {
     return null;
   }
   
-  if (initialAuthPassed === false) {
+  if (authStatus === 'unauthenticated') {
     return <Redirect href="/(auth)/authenticate" />;
   }
 
