@@ -1,7 +1,7 @@
 import { Audio } from "expo-av";
 import * as Crypto from "expo-crypto";
 import * as FileSystem from "expo-file-system";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import useStore from "../state/index";
 import { useUsage } from "./useUsage";
 
@@ -33,11 +33,14 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
   const [isRecording, setIsRecording] = useState(false);
   const [recordings, setRecordings] = useState<string[]>([]);
   const [isProcessingLocally, setIsProcessingLocally] = useState(false);
-  const [isFlowCompleteLocally, setIsFlowCompleteLocally] = useState(false); // New state
+  const [isFlowCompleteLocally, setIsFlowCompleteLocally] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recordingObject, setRecordingObject] = useState<Audio.Recording | null>(null);
   const [permissionStatus, setPermissionStatus] = useState<Audio.PermissionStatus | null>(null);
-  const [isButtonDisabled, setIsButtonDisabled] = useState(false); // <-- New state for button disabling
+  const [isButtonDisabled, setIsButtonDisabled] = useState(false);
+
+  // Ref to track if cleanup is already in progress to prevent overlaps
+  const cleanupInProgress = useRef(false);
 
   const { checkCanCreateConversation } = useUsage();
   const store = useStore();
@@ -95,69 +98,112 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
     }
   };
 
-  // Enhanced cleanup function - Stable dependencies
+  // Enhanced cleanup function
   const cleanup = useCallback(async () => {
-    console.log("[useRecordingFlow] cleanup() called.");
-    // Get latest state directly if needed, but prefer function arguments if possible
+    // Prevent overlapping cleanup calls
+    if (cleanupInProgress.current) {
+        console.log("[useRecordingFlow] cleanup: Already in progress, skipping.");
+        return;
+    }
+    console.log("[useRecordingFlow] cleanup: Starting cleanup process.");
+    cleanupInProgress.current = true;
+
+    // Get latest state values INSIDE the cleanup function
+    // Using state directly is okay here as we want the most current value during execution
     const currentRecordingObject = recordingObject; // Capture current value
     const currentIsRecording = isRecording; // Capture current value
     const currentRecordings = recordings; // Capture current value
 
     try {
       if (currentRecordingObject) {
-        if (currentIsRecording) {
-          console.log("[useRecordingFlow] cleanup: Stopping and unloading active recording object.");
-          try {
-             await currentRecordingObject.stopAndUnloadAsync();
-          } catch (stopErr) {
-              console.warn("[useRecordingFlow] cleanup: Error during stopAndUnloadAsync:", stopErr);
-              // Attempt cleanup even if stop fails
+          // Check status BEFORE trying to stop/unload
+          const status = await currentRecordingObject.getStatusAsync();
+          console.log(`[useRecordingFlow] cleanup: Recording object status: ${JSON.stringify(status)}`);
+
+          if (status.isRecording) {
+              console.log("[useRecordingFlow] cleanup: Status indicates recording. Stopping and unloading...");
               try {
-                  await currentRecordingObject._cleanupForUnloadedRecorder();
-              } catch(cleanupErr){
-                  console.warn("[useRecordingFlow] cleanup: Error during _cleanupForUnloadedRecorder after stop error:", cleanupErr);
+                  await currentRecordingObject.stopAndUnloadAsync();
+                  console.log("[useRecordingFlow] cleanup: Stop and unload successful.");
+              } catch (stopErr) {
+                  console.warn("[useRecordingFlow] cleanup: Error during stopAndUnloadAsync:", stopErr);
+                  // Attempt internal cleanup method as a fallback
+                  try {
+                      // Note: This is an internal method and might change/break
+                      // @ts-ignore _cleanupForUnloadedRecorder is not in public API type
+                      if (typeof currentRecordingObject._cleanupForUnloadedRecorder === 'function') {
+                          // @ts-ignore
+                          await currentRecordingObject._cleanupForUnloadedRecorder();
+                          console.log("[useRecordingFlow] cleanup: Fallback internal cleanup called after stop error.");
+                      }
+                  } catch(cleanupErr){
+                      console.warn("[useRecordingFlow] cleanup: Error during fallback internal cleanup:", cleanupErr);
+                  }
               }
+          } else if (status.isDoneRecording && status.canRecord) {
+               // It might be stopped but not fully unloaded (e.g., if stopAndUnloadAsync was interrupted)
+               console.log("[useRecordingFlow] cleanup: Status indicates stopped but maybe not unloaded. Attempting unload/cleanup.");
+                try {
+                    // Note: This is an internal method and might change/break
+                    // @ts-ignore _cleanupForUnloadedRecorder is not in public API type
+                    if (typeof currentRecordingObject._cleanupForUnloadedRecorder === 'function') {
+                        // @ts-ignore
+                        await currentRecordingObject._cleanupForUnloadedRecorder();
+                        console.log("[useRecordingFlow] cleanup: Fallback internal cleanup called for stopped state.");
+                    } else {
+                         // If internal method isn't available, try unloading again just in case
+                         await currentRecordingObject.stopAndUnloadAsync();
+                         console.log("[useRecordingFlow] cleanup: Retried stopAndUnloadAsync for stopped state.");
+                    }
+                } catch(cleanupErr){
+                    console.warn("[useRecordingFlow] cleanup: Error during unload/cleanup for stopped state:", cleanupErr);
+                }
+          } else {
+               console.log("[useRecordingFlow] cleanup: Recording object status doesn't require stop/unload action.");
           }
-        } else {
-            console.log("[useRecordingFlow] cleanup: Cleaning up unloaded recording object.");
-             try {
-                  await currentRecordingObject._cleanupForUnloadedRecorder();
-             } catch(cleanupErr){
-                  console.warn("[useRecordingFlow] cleanup: Error during _cleanupForUnloadedRecorder:", cleanupErr);
-             }
-        }
+      } else {
+          console.log("[useRecordingFlow] cleanup: No recording object found in state.");
       }
-      // REMOVED: Button timeout clearing
     } catch (err) {
       console.error('[useRecordingFlow] Cleanup failed:', err);
     } finally {
-      console.log("[useRecordingFlow] cleanup: Resetting state.");
-      setRecordingObject(null); // Reset state setter
-      setIsRecording(false); // Reset state setter
+      console.log("[useRecordingFlow] cleanup: Resetting state variables.");
+      // Reset state setters
+      setRecordingObject(null);
+      setIsRecording(false);
 
       // Clean up any temporary recording files
       if (currentRecordings.length > 0) {
           console.log(`[useRecordingFlow] cleanup: Deleting ${currentRecordings.length} temporary files.`);
-          currentRecordings.forEach(async (uri) => {
+          // Use Promise.allSettled for better error handling of individual deletions
+          const deletePromises = currentRecordings.map(async (uri) => {
             try {
               const fileInfo = await FileSystem.getInfoAsync(uri);
               if (fileInfo.exists) {
                 await FileSystem.deleteAsync(uri, { idempotent: true });
                 // console.log(`[useRecordingFlow] cleanup: Deleted ${uri}`); // Verbose
               }
+              return { status: 'fulfilled', uri };
             } catch (deleteErr) {
-              console.error('[useRecordingFlow] cleanup: Failed to delete recording file:', deleteErr);
+              console.error(`[useRecordingFlow] cleanup: Failed to delete recording file ${uri}:`, deleteErr);
+              return { status: 'rejected', uri, reason: deleteErr };
             }
           });
-          setRecordings([]); // Reset state setter
+          await Promise.allSettled(deletePromises);
+          setRecordings([]);
       }
-       // Ensure button is re-enabled on cleanup if it was disabled
-      setIsButtonDisabled(false); // Reset state setter
-      setIsFlowCompleteLocally(false); // Reset completion state setter
-      setIsProcessingLocally(false); // Reset processing state setter
-      setError(null); // Clear any errors
+
+      setIsButtonDisabled(false);
+      setIsFlowCompleteLocally(false);
+      setIsProcessingLocally(false);
+      setError(null);
+
+      // Release the lock
+      cleanupInProgress.current = false;
+      console.log("[useRecordingFlow] cleanup: Finished cleanup process.");
     }
-  }, [recordings, isRecording, recordingObject]); // Keep dependencies for capturing current values
+  // Update dependencies: Add the state variables read directly inside
+  }, [recordings, isRecording, recordingObject]);
 
   // Toggle recording mode
   const handleToggleMode = (index: number) => {
@@ -175,26 +221,36 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
 
   // Start/stop recording with enhanced error handling and simplified button logic
   const handleToggleRecording = async () => {
-     if (isButtonDisabled) return; // Still prevent clicks if already processing
+     // Use ref to prevent clicks if cleanup is running
+     if (isButtonDisabled || cleanupInProgress.current) {
+         console.log(`[useRecordingFlow] handleToggleRecording: Button press ignored (disabled: ${isButtonDisabled}, cleanup: ${cleanupInProgress.current})`);
+         return;
+     }
 
-    setIsButtonDisabled(true); // Disable button for the duration of the async operation
+    setIsButtonDisabled(true); // Disable button early
 
     if (isRecording) {
       // --- Stop Recording ---
+      console.log("[useRecordingFlow] handleToggleRecording: Stopping recording...");
       try {
-        setIsProcessingLocally(true); // Indicate processing starts
-        setIsRecording(false); // Update state: no longer recording
+        // Get current recording object from state *before* potential state changes
+        const currentRecObject = recordingObject;
 
-        if (!recordingObject) {
-            console.warn("[useRecordingFlow] Stop called but recordingObject is null.");
-            // Attempt cleanup and reset state
-            await cleanup();
+        // Set states immediately
+        setIsProcessingLocally(true);
+        setIsRecording(false); // Optimistic UI update
+
+        if (!currentRecObject) {
+            console.warn("[useRecordingFlow] Stop called but recordingObject state is null.");
+            // Attempt cleanup and reset state - avoid calling cleanup directly if stopping failed early
+            setIsProcessingLocally(false);
+            setIsButtonDisabled(false); // Re-enable button
             return; // Exit early
         }
 
-        await recordingObject.stopAndUnloadAsync();
-        const uri = recordingObject.getURI();
-        setRecordingObject(null); // Clear the recording object *after* getting URI
+        await currentRecObject.stopAndUnloadAsync();
+        const uri = currentRecObject.getURI();
+        setRecordingObject(null); // Clear the recording object *after* getting URI and stopping
 
         if (!uri) {
            console.error('[useRecordingFlow] Recording URI not found after stopping.');
@@ -202,26 +258,25 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
         }
 
         console.log(`[useRecordingFlow] Recording stopped. URI: ${uri}`);
-        setRecordings((prev) => [...prev, uri]);
+        const newRecordings = [...recordings, uri];
+        setRecordings(newRecordings); // Update recordings state
 
 
         const audioKey = recordMode === 'live' ? 'live' : currentPartner.toString();
 
-        // Check if server ID is known, log warning if not
-        if (!store.localToServerIds[localId]) {
-           console.warn(`[useRecordingFlow] Server ID for local ID ${localId} not found when saving upload intent. Conversation creation might be pending or failed.`);
-           // Critical check: if it's the first recording stopping and no serverId, likely creation failed earlier
-           if (recordings.length === 0 && currentPartner === 1) { // Check length *before* the state update above finishes
-                 console.error("[useRecordingFlow] Critical: Server ID missing after first recording stopped. Conversation creation likely failed.");
+        const currentServerId = store.localToServerIds[localId];
+        if (!currentServerId) {
+           console.warn(`[useRecordingFlow] Server ID for local ID ${localId} not found when saving upload intent.`);
+           if (newRecordings.length === 1 && currentPartner === 1) {
+                 console.error("[useRecordingFlow] Critical: Server ID missing after first recording stopped.");
                  setError("Failed to associate recording with a conversation.");
-                 // Don't proceed further if we can't associate the recording
-                 setIsProcessingLocally(false); // Ensure processing state is cleared
-                 await cleanup(); // Clean up the recording file etc.
+                 setIsProcessingLocally(false);
+                 await cleanup(); // Full cleanup needed here
                  return;
            }
         }
 
-        // Proceed to save intent regardless of warning
+        // Use await here to ensure intent is saved before checking completion logic
         await store.saveUploadIntent(localId, uri, audioKey);
         console.log(`[useRecordingFlow] Saved upload intent for localId ${localId}, audioKey ${audioKey}`);
 
@@ -229,7 +284,7 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
 
         if (isLastRecordingStep) {
            console.log('[useRecordingFlow] Last recording step finished locally. Setting isFlowCompleteLocally=true.');
-           setIsFlowCompleteLocally(true); // Signal local completion
+           setIsFlowCompleteLocally(true);
         } else {
           setCurrentPartner(2);
           console.log('[useRecordingFlow] Separate mode: Switched to Partner 2.');
@@ -238,32 +293,50 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
       } catch (err) {
         setError(`Failed to stop recording: ${err instanceof Error ? err.message : String(err)}`);
         console.error('[useRecordingFlow] Error stopping recording:', err);
-        // Attempt cleanup on error
+        // Attempt FULL cleanup on stop error
         await cleanup();
-        // Ensure flags are reset even if cleanup fails partially
+        // Ensure flags are reset AFTER cleanup attempts
         setIsProcessingLocally(false);
         setIsFlowCompleteLocally(false);
         setIsRecording(false); // Ensure recording state is false
+        setIsButtonDisabled(false); // Ensure button is enabled
+
 
       } finally {
-        // Ensure processing state is off and button is enabled regardless of success/error
+        // Redundant? Cleanup should handle this, but ensure processing is off
         setIsProcessingLocally(false);
-        setIsButtonDisabled(false);
+         // Ensure button is enabled unless flow is complete (handled elsewhere) or error occurred (handled above)
+        if (!isFlowCompleteLocally && !error) {
+             setIsButtonDisabled(false);
+        }
       }
     } else {
       // --- Start Recording ---
-      let conversationCreated = false; // Track if creation was attempted
+      console.log("[useRecordingFlow] handleToggleRecording: Starting recording...");
+      let conversationCreated = false;
       try {
-        // Reset potentially stale states
+        // Reset potentially stale states *before* checks
         setIsFlowCompleteLocally(false);
         setIsProcessingLocally(false);
         setError(null);
+
+        // **Critical Check:** Ensure previous recording object is null before proceeding
+        if (recordingObject) {
+            console.warn("[useRecordingFlow] Start called but recordingObject state is not null. Attempting cleanup first.");
+            await cleanup(); // Attempt cleanup before starting
+            // Check again after cleanup
+            if (recordingObject) {
+                 console.error("[useRecordingFlow] Start failed: Cleanup did not clear recordingObject.");
+                 throw new Error("Failed to cleanup previous recording instance.");
+            }
+        }
+
 
         // 1. Check Usage
         const canCreate = await checkCanCreateConversation();
         if (!canCreate) {
           setError('Usage limit reached or subscription required');
-          setIsButtonDisabled(false); // Re-enable button immediately
+          setIsButtonDisabled(false);
           return;
         }
 
@@ -271,55 +344,71 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
         const hasPermission = await checkPermissions();
         if (!hasPermission) {
           setError('Microphone permission denied');
-           setIsButtonDisabled(false); // Re-enable button immediately
+          setIsButtonDisabled(false);
           return;
         }
 
-        // 3. Create Conversation (only if it's the very first recording attempt for this flow instance)
+        // 3. Create Conversation (only if first recording attempt)
+        // Check recordings length AND partner state
         if (recordings.length === 0 && currentPartner === 1 && !store.localToServerIds[localId]) {
            console.log(`[useRecordingFlow] First recording started. Creating conversation with localId: ${localId}`);
-           conversationCreated = true; // Mark that we are attempting creation
+           conversationCreated = true;
            await store.createConversation(modeId, recordMode, localId);
-           // No need to wait for the serverId here, setLocalToServerId handles triggering uploads
            console.log(`[useRecordingFlow] Conversation creation initiated for localId: ${localId}.`);
         }
 
         // 4. Prepare and Start Recording
         console.log('[useRecordingFlow] Preparing and starting recording...');
         const recording = new Audio.Recording();
-        await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY_LOW_LATENCY); // Use a preset suitable for voice
-        // Note: HIGH_QUALITY_LOW_LATENCY defaults should be reasonable for m4a on both platforms
+        // Set recording options explicitly for potentially better cross-platform consistency
+        await recording.prepareToRecordAsync({
+             ...Audio.RecordingOptionsPresets.HIGH_QUALITY, // Start with high quality preset
+             android: {
+                 ...Audio.RecordingOptionsPresets.HIGH_QUALITY.android,
+                 numberOfChannels: 1, // Explicitly mono
+             },
+             ios: {
+                 ...Audio.RecordingOptionsPresets.HIGH_QUALITY.ios,
+                 numberOfChannels: 1, // Explicitly mono
+                 // audioQuality: Audio.IOSAudioQuality.MAX, // Consider MAX if needed, HIGH is usually good
+             }
+        });
+        console.log('[useRecordingFlow] Recording prepared.');
 
         setRecordingObject(recording); // Store the recording object *before* starting
 
         await recording.startAsync();
-        setIsRecording(true); // Update state: now recording
+        setIsRecording(true); // Update state AFTER successful start
         console.log('[useRecordingFlow] Recording started successfully.');
 
       } catch (err) {
-        setError(`Failed to start recording: ${err instanceof Error ? err.message : String(err)}`);
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        setError(`Failed to start recording: ${errorMessage}`);
         console.error('[useRecordingFlow] Error starting recording:', err);
-        // Attempt cleanup on error
+        // Attempt FULL cleanup on start error
         await cleanup();
-         // Ensure flags are reset even if cleanup fails partially
-        setIsRecording(false); // Ensure recording state is false
-        setRecordingObject(null);
-        // If conversation creation was attempted and failed, the error might be from store.createConversation
+        // Ensure flags are reset AFTER cleanup attempt
+        setIsRecording(false);
+        setRecordingObject(null); // Ensure object is cleared from state
+        setIsButtonDisabled(false); // Ensure button is enabled
+
         if (conversationCreated) {
              console.error("[useRecordingFlow] Conversation creation might have failed.");
-             // Error state is already set
         }
       } finally {
-          // Ensure button is re-enabled regardless of success/error during start
-          setIsButtonDisabled(false);
+          // Ensure button is re-enabled ONLY if not currently recording
+          // (it might have been enabled in the catch block already)
+          if (!recordingObject) { // Use the local state variable directly
+             setIsButtonDisabled(false);
+          }
       }
     }
   };
 
   // Cleanup on unmount - stable callback ensures effect runs only once
   const stableCleanup = useCallback(async () => {
-    await cleanup();
-  }, [cleanup]); // Dependency array includes the useCallback-wrapped cleanup
+      await cleanup();
+  }, [cleanup]);
 
   useEffect(() => {
      console.log("[useRecordingFlow] Mount effect: Running initial permission check.");
@@ -327,9 +416,14 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
 
     return () => {
       console.log("[useRecordingFlow] Unmount effect: Calling stableCleanup.");
-      stableCleanup().catch(console.error);
+      // Don't await here, just fire and forget
+      stableCleanup().catch(err => console.error("[useRecordingFlow] Error during unmount cleanup:", err));
     };
-  }, [stableCleanup]); // Ensure this runs only on mount/unmount
+  // stableCleanup depends on cleanup, which now depends on state variables too
+  // Let's simplify the dependency array for the mount/unmount effect
+  // It should only depend on the stable cleanup function itself.
+  }, [stableCleanup]);
+
 
   return {
     localId,
@@ -344,4 +438,9 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
     error,
     cleanup: stableCleanup, // Return the stable cleanup function
   };
-}; 
+};
+
+// Helper to get latest state if needed outside of setters
+function get() {
+    return useStore.getState();
+} 
