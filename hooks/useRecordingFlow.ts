@@ -22,7 +22,7 @@ interface RecordingFlowResult {
   handleToggleMode: (index: number) => void;
   handleToggleRecording: () => Promise<void>;
   error: string | null;
-  cleanup: () => Promise<void>;
+  cleanup: () => Promise<void>; // Keep cleanup export for potential manual calls
 }
 
 export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFlowResult => {
@@ -38,6 +38,19 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
   const [recordingObject, setRecordingObject] = useState<Audio.Recording | null>(null);
   const [permissionStatus, setPermissionStatus] = useState<Audio.PermissionStatus | null>(null);
   const [isButtonDisabled, setIsButtonDisabled] = useState(false);
+
+  // Refs to hold latest state for cleanup without causing effect dependency issues
+  const recordingObjectRef = useRef<Audio.Recording | null>(null);
+  const recordingsRef = useRef<string[]>([]);
+  const isRecordingRef = useRef<boolean>(false);
+
+  // Keep refs updated
+  useEffect(() => {
+      recordingObjectRef.current = recordingObject;
+      recordingsRef.current = recordings;
+      isRecordingRef.current = isRecording;
+  }, [recordingObject, recordings, isRecording]);
+
 
   // Ref to track if cleanup is already in progress to prevent overlaps
   const cleanupInProgress = useRef(false);
@@ -98,9 +111,9 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
     }
   };
 
-  // Enhanced cleanup function
+  // Enhanced cleanup function - Reads state via refs now
+  // No dependencies needed as it reads refs directly when called
   const cleanup = useCallback(async () => {
-    // Prevent overlapping cleanup calls
     if (cleanupInProgress.current) {
         console.log("[useRecordingFlow] cleanup: Already in progress, skipping.");
         return;
@@ -108,15 +121,13 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
     console.log("[useRecordingFlow] cleanup: Starting cleanup process.");
     cleanupInProgress.current = true;
 
-    // Get latest state values INSIDE the cleanup function
-    // Using state directly is okay here as we want the most current value during execution
-    const currentRecordingObject = recordingObject; // Capture current value
-    const currentIsRecording = isRecording; // Capture current value
-    const currentRecordings = recordings; // Capture current value
+    // Get latest state values using refs INSIDE the cleanup function
+    const currentRecordingObject = recordingObjectRef.current;
+    // const currentIsRecording = isRecordingRef.current; // Not directly needed below
+    const currentRecordings = recordingsRef.current;
 
     try {
       if (currentRecordingObject) {
-          // Check status BEFORE trying to stop/unload
           const status = await currentRecordingObject.getStatusAsync();
           console.log(`[useRecordingFlow] cleanup: Recording object status: ${JSON.stringify(status)}`);
 
@@ -127,10 +138,8 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
                   console.log("[useRecordingFlow] cleanup: Stop and unload successful.");
               } catch (stopErr) {
                   console.warn("[useRecordingFlow] cleanup: Error during stopAndUnloadAsync:", stopErr);
-                  // Attempt internal cleanup method as a fallback
                   try {
-                      // Note: This is an internal method and might change/break
-                      // @ts-ignore _cleanupForUnloadedRecorder is not in public API type
+                      // @ts-ignore
                       if (typeof currentRecordingObject._cleanupForUnloadedRecorder === 'function') {
                           // @ts-ignore
                           await currentRecordingObject._cleanupForUnloadedRecorder();
@@ -141,17 +150,14 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
                   }
               }
           } else if (status.isDoneRecording && status.canRecord) {
-               // It might be stopped but not fully unloaded (e.g., if stopAndUnloadAsync was interrupted)
                console.log("[useRecordingFlow] cleanup: Status indicates stopped but maybe not unloaded. Attempting unload/cleanup.");
                 try {
-                    // Note: This is an internal method and might change/break
-                    // @ts-ignore _cleanupForUnloadedRecorder is not in public API type
+                    // @ts-ignore
                     if (typeof currentRecordingObject._cleanupForUnloadedRecorder === 'function') {
                         // @ts-ignore
                         await currentRecordingObject._cleanupForUnloadedRecorder();
                         console.log("[useRecordingFlow] cleanup: Fallback internal cleanup called for stopped state.");
                     } else {
-                         // If internal method isn't available, try unloading again just in case
                          await currentRecordingObject.stopAndUnloadAsync();
                          console.log("[useRecordingFlow] cleanup: Retried stopAndUnloadAsync for stopped state.");
                     }
@@ -162,7 +168,7 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
                console.log("[useRecordingFlow] cleanup: Recording object status doesn't require stop/unload action.");
           }
       } else {
-          console.log("[useRecordingFlow] cleanup: No recording object found in state.");
+          console.log("[useRecordingFlow] cleanup: No recording object found in ref.");
       }
     } catch (err) {
       console.error('[useRecordingFlow] Cleanup failed:', err);
@@ -172,16 +178,13 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
       setRecordingObject(null);
       setIsRecording(false);
 
-      // Clean up any temporary recording files
       if (currentRecordings.length > 0) {
           console.log(`[useRecordingFlow] cleanup: Deleting ${currentRecordings.length} temporary files.`);
-          // Use Promise.allSettled for better error handling of individual deletions
           const deletePromises = currentRecordings.map(async (uri) => {
             try {
               const fileInfo = await FileSystem.getInfoAsync(uri);
               if (fileInfo.exists) {
                 await FileSystem.deleteAsync(uri, { idempotent: true });
-                // console.log(`[useRecordingFlow] cleanup: Deleted ${uri}`); // Verbose
               }
               return { status: 'fulfilled', uri };
             } catch (deleteErr) {
@@ -190,20 +193,21 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
             }
           });
           await Promise.allSettled(deletePromises);
-          setRecordings([]);
+          setRecordings([]); // Clear the state after deletion attempts
+          recordingsRef.current = []; // Clear the ref as well
       }
 
       setIsButtonDisabled(false);
       setIsFlowCompleteLocally(false);
       setIsProcessingLocally(false);
       setError(null);
+      setCurrentPartner(1); // Reset partner on cleanup
 
-      // Release the lock
       cleanupInProgress.current = false;
       console.log("[useRecordingFlow] cleanup: Finished cleanup process.");
     }
-  // Update dependencies: Add the state variables read directly inside
-  }, [recordings, isRecording, recordingObject]);
+  // Use empty dependency array for useCallback as it now only uses refs and setters
+  }, []);
 
   // Toggle recording mode
   const handleToggleMode = (index: number) => {
@@ -234,14 +238,14 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
       console.log("[useRecordingFlow] handleToggleRecording: Stopping recording...");
       try {
         // Get current recording object from state *before* potential state changes
-        const currentRecObject = recordingObject;
+        const currentRecObject = recordingObjectRef.current;
 
         // Set states immediately
         setIsProcessingLocally(true);
         setIsRecording(false); // Optimistic UI update
 
         if (!currentRecObject) {
-            console.warn("[useRecordingFlow] Stop called but recordingObject state is null.");
+            console.warn("[useRecordingFlow] Stop called but recordingObject ref is null.");
             // Attempt cleanup and reset state - avoid calling cleanup directly if stopping failed early
             setIsProcessingLocally(false);
             setIsButtonDisabled(false); // Re-enable button
@@ -258,7 +262,7 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
         }
 
         console.log(`[useRecordingFlow] Recording stopped. URI: ${uri}`);
-        const newRecordings = [...recordings, uri];
+        const newRecordings = [...recordingsRef.current, uri];
         setRecordings(newRecordings); // Update recordings state
 
 
@@ -321,12 +325,12 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
         setError(null);
 
         // **Critical Check:** Ensure previous recording object is null before proceeding
-        if (recordingObject) {
-            console.warn("[useRecordingFlow] Start called but recordingObject state is not null. Attempting cleanup first.");
+        if (recordingObjectRef.current) {
+            console.warn("[useRecordingFlow] Start called but recordingObject ref is not null. Attempting cleanup first.");
             await cleanup(); // Attempt cleanup before starting
             // Check again after cleanup
-            if (recordingObject) {
-                 console.error("[useRecordingFlow] Start failed: Cleanup did not clear recordingObject.");
+            if (recordingObjectRef.current) {
+                 console.error("[useRecordingFlow] Start failed: Cleanup did not clear recordingObject ref.");
                  throw new Error("Failed to cleanup previous recording instance.");
             }
         }
@@ -350,7 +354,7 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
 
         // 3. Create Conversation (only if first recording attempt)
         // Check recordings length AND partner state
-        if (recordings.length === 0 && currentPartner === 1 && !store.localToServerIds[localId]) {
+        if (recordingsRef.current.length === 0 && currentPartner === 1 && !store.localToServerIds[localId]) {
            console.log(`[useRecordingFlow] First recording started. Creating conversation with localId: ${localId}`);
            conversationCreated = true;
            await store.createConversation(modeId, recordMode, localId);
@@ -398,31 +402,29 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
       } finally {
           // Ensure button is re-enabled ONLY if not currently recording
           // (it might have been enabled in the catch block already)
-          if (!recordingObject) { // Use the local state variable directly
+          if (!recordingObjectRef.current) { // Use the local state variable directly
              setIsButtonDisabled(false);
           }
       }
     }
   };
 
-  // Cleanup on unmount - stable callback ensures effect runs only once
-  const stableCleanup = useCallback(async () => {
-      await cleanup();
-  }, [cleanup]);
-
+  // Mount/Unmount Effect - Simplified Dependencies
   useEffect(() => {
      console.log("[useRecordingFlow] Mount effect: Running initial permission check.");
      checkPermissions(); // Check permissions once on mount
 
+    // Define the cleanup logic directly in the return function
+    // This function will have access to the `cleanup` function from the outer scope
+    // which now uses refs and has a stable identity.
     return () => {
-      console.log("[useRecordingFlow] Unmount effect: Calling stableCleanup.");
-      // Don't await here, just fire and forget
-      stableCleanup().catch(err => console.error("[useRecordingFlow] Error during unmount cleanup:", err));
+      console.log("[useRecordingFlow] Unmount effect: Calling cleanup.");
+      // Use the stable cleanup function (which uses refs internally)
+      cleanup().catch(err => console.error("[useRecordingFlow] Error during unmount cleanup:", err));
     };
-  // stableCleanup depends on cleanup, which now depends on state variables too
-  // Let's simplify the dependency array for the mount/unmount effect
-  // It should only depend on the stable cleanup function itself.
-  }, [stableCleanup]);
+  // Depend only on the `cleanup` function itself (which is stable due to useCallback([])).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cleanup]);
 
 
   return {
@@ -436,11 +438,12 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
     handleToggleMode,
     handleToggleRecording,
     error,
-    cleanup: stableCleanup, // Return the stable cleanup function
+    cleanup, // Return the stable cleanup function
   };
 };
 
 // Helper to get latest state if needed outside of setters
-function get() {
-    return useStore.getState();
-} 
+// This helper might not be necessary anymore if refs handle most cases
+// function get() {
+//     return useStore.getState();
+// } 
