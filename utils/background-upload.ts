@@ -3,12 +3,12 @@ import * as BackgroundFetch from 'expo-background-fetch';
 import * as FileSystem from 'expo-file-system';
 import * as TaskManager from 'expo-task-manager';
 import { getAuthorizationHeader } from './auth';
-// Import the store hook to access the localToServerIds map
-import useStore from '@/state';
+// REMOVED: import useStore from '@/state';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 export const BACKGROUND_UPLOAD_TASK = "BACKGROUND_UPLOAD_TASK";
 const PENDING_UPLOADS_KEY = '@background_uploads';
+const ID_MAP_KEY = '@local_to_server_id_map'; // New key for the map
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // Updated interface: conversationId might be local initially.
@@ -21,6 +21,28 @@ export interface PendingUpload {
   timestamp: number; // When it was added/updated
   attemptCount: number; // Track attempts for backoff or max retries in background
 }
+
+// --- New AsyncStorage Helpers for ID Map ---
+type LocalToServerIdMap = { [key: string]: string };
+
+const getStoredIdMap = async (): Promise<LocalToServerIdMap> => {
+    try {
+        const mapStr = await AsyncStorage.getItem(ID_MAP_KEY);
+        return mapStr ? JSON.parse(mapStr) : {};
+    } catch (error) {
+        console.error('[BackgroundUtil:getStoredIdMap] Error getting ID map:', error);
+        return {};
+    }
+};
+
+export const setStoredIdMap = async (idMap: LocalToServerIdMap): Promise<void> => {
+    try {
+        await AsyncStorage.setItem(ID_MAP_KEY, JSON.stringify(idMap));
+    } catch (error) {
+        console.error('[BackgroundUtil:setStoredIdMap] Error saving ID map:', error);
+    }
+};
+// --- End New Helpers ---
 
 // Helper function to get all pending uploads
 export const getPendingUploads = async (): Promise<PendingUpload[]> => {
@@ -103,24 +125,25 @@ export const saveOrUpdatePendingUpload = async (
 };
 
 
-// Remove based on SERVER ID and audio key.
-export const removePendingUpload = async (serverConversationId: string, audioKey: string): Promise<void> => {
+// Remove based on SERVER ID and audio key. ACCEPTS localToServerIds map now.
+export const removePendingUpload = async (
+    serverConversationId: string,
+    audioKey: string,
+    localToServerIds: LocalToServerIdMap // <-- Added Parameter
+): Promise<void> => {
   console.log(`[BackgroundUtil:removePendingUpload] Attempting to remove: ServerConvID=${serverConversationId}, Key=${audioKey}`);
   try {
     let uploads = await getPendingUploads();
     const initialCount = uploads.length;
 
     // Filter out based on SERVER ID and key
-    // Also check if localConversationId maps to this serverId
-    const localToServerIds = useStore.getState().localToServerIds;
+    // Also check if localConversationId maps to this serverId using the passed map
+    // REMOVED: const localToServerIds = useStore.getState().localToServerIds;
     const filteredUploads = uploads.filter(upload => {
         const isDirectMatch = upload.conversationId === serverConversationId && upload.audioKey === audioKey;
-        // Check if the stored local ID maps to the server ID we want to remove
         const isMappedMatch = upload.localConversationId && localToServerIds[upload.localConversationId] === serverConversationId && upload.audioKey === audioKey;
-        // Check if the conversationId IS a local ID that maps to the server ID
         const isConvIdLocalMapped = !UUID_REGEX.test(upload.conversationId) && localToServerIds[upload.conversationId] === serverConversationId && upload.audioKey === audioKey;
 
-        // Keep the item if NONE of the removal conditions match
         return !(isDirectMatch || isMappedMatch || isConvIdLocalMapped);
     });
 
@@ -139,7 +162,8 @@ export const removePendingUpload = async (serverConversationId: string, audioKey
 
 // Helper function for background uploads - expects SERVER ID
 export const uploadAudioInBackground = async (
-  pendingUpload: PendingUpload // Pass the whole object
+  pendingUpload: PendingUpload,
+  localToServerIds: LocalToServerIdMap // Pass map down for removePendingUpload calls
 ): Promise<boolean> => { // Return true on success, false on failure
     const { audioUri, conversationId: serverConversationId, audioKey, localConversationId } = pendingUpload;
     // Basic check: Ensure serverConversationId looks like a UUID before proceeding
@@ -168,8 +192,8 @@ export const uploadAudioInBackground = async (
       const fileInfo = await FileSystem.getInfoAsync(audioUri);
       if (!fileInfo.exists) {
           console.error(`[BackgroundUtil:uploadAudioInBackground] File does not exist, cannot upload: ${audioUri}. Removing from pending.`);
-          // Remove the pending upload if the file is gone - use SERVER ID
-          await removePendingUpload(serverConversationId, audioKey);
+          // Pass the map to removePendingUpload
+          await removePendingUpload(serverConversationId, audioKey, localToServerIds);
           return false; // Cannot succeed without file
       }
        // console.log(`[BackgroundUtil:uploadAudioInBackground] File exists: ${audioUri}`); // Too verbose
@@ -208,7 +232,8 @@ export const uploadAudioInBackground = async (
 
       // --- Success ---
       console.log(`[BackgroundUtil:uploadAudioInBackground] Background upload SUCCESSFUL for ${serverConversationId}_${audioKey}. Status: ${response.status}.`);
-      await removePendingUpload(serverConversationId, audioKey); // Remove from AsyncStorage
+      // Pass the map to removePendingUpload
+      await removePendingUpload(serverConversationId, audioKey, localToServerIds); // Remove from AsyncStorage
 
       // Delete local file on successful background upload
       try {
@@ -227,7 +252,7 @@ export const uploadAudioInBackground = async (
     }
 };
 
-// Define background task
+// Define background task - Use getStoredIdMap now
 TaskManager.defineTask(BACKGROUND_UPLOAD_TASK, async () => {
   const taskStartTime = Date.now();
   console.log(`[BackgroundTask:${BACKGROUND_UPLOAD_TASK}] TASK STARTING at ${new Date(taskStartTime).toISOString()}`);
@@ -247,15 +272,13 @@ TaskManager.defineTask(BACKGROUND_UPLOAD_TASK, async () => {
 
     console.log(`[BackgroundTask:${BACKGROUND_UPLOAD_TASK}] Found ${pendingUploads.length} pending uploads. Processing...`);
 
-    // Get the current local->server ID map from the store state
-    // Note: Zustand state might not be fully initialized when background task runs.
-    // This is a limitation. A more robust solution would persist the map or query the server.
-    // For now, we proceed assuming the map *might* be available.
-    let localToServerIds: { [key: string]: string } = {};
+    // Get the local->server ID map from AsyncStorage
+    let localToServerIds: LocalToServerIdMap = {};
     try {
-       localToServerIds = useStore.getState().localToServerIds || {};
+       localToServerIds = await getStoredIdMap(); // Use new helper
+       console.log(`[BackgroundTask:${BACKGROUND_UPLOAD_TASK}] Loaded ID map from AsyncStorage. Found ${Object.keys(localToServerIds).length} mappings.`);
     } catch (storeError) {
-        console.warn(`[BackgroundTask:${BACKGROUND_UPLOAD_TASK}] Could not access Zustand state for localToServerIds. Map may be empty.`);
+        console.warn(`[BackgroundTask:${BACKGROUND_UPLOAD_TASK}] Could not access stored ID map. Map may be empty.`);
     }
 
     const uploadsToProcess = [...pendingUploads]; // Create a copy
@@ -275,7 +298,7 @@ TaskManager.defineTask(BACKGROUND_UPLOAD_TASK, async () => {
             const mappedServerId = localToServerIds[upload.conversationId];
             if (mappedServerId) {
                 serverIdToUse = mappedServerId;
-                console.log(`[BackgroundTask:${BACKGROUND_UPLOAD_TASK}] Found mapped Server ID ${serverIdToUse} for Local ID ${upload.conversationId}. Updating record.`);
+                console.log(`[BackgroundTask:${BACKGROUND_UPLOAD_TASK}] Found mapped Server ID ${serverIdToUse} for Local ID ${upload.conversationId}. Updating record in AsyncStorage (pending).`);
                 // Update the record in AsyncStorage for future runs
                  await saveOrUpdatePendingUpload({
                     ...upload,
@@ -299,7 +322,8 @@ TaskManager.defineTask(BACKGROUND_UPLOAD_TASK, async () => {
                 localConversationId: originalLocalId || undefined, // Use the original local ID
             };
 
-            const success = await uploadAudioInBackground(uploadObjectWithServerId);
+            // Pass the loaded map to uploadAudioInBackground
+            const success = await uploadAudioInBackground(uploadObjectWithServerId, localToServerIds);
 
             if (success) {
                 successCount++;
@@ -307,6 +331,7 @@ TaskManager.defineTask(BACKGROUND_UPLOAD_TASK, async () => {
                 failureCount++;
                 // Increment attempt count in AsyncStorage
                  try {
+                      // Read the *current* pending uploads again before modifying attempt count
                       const currentUploads = await getPendingUploads();
                       // Find by URI as it should be unique for the pending item
                       const indexToUpdate = currentUploads.findIndex(u => u.audioUri === upload.audioUri);

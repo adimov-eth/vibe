@@ -1,4 +1,9 @@
-import { getPendingUploads, removePendingUpload, saveOrUpdatePendingUpload } from '@/utils/background-upload';
+import {
+  getPendingUploads,
+  removePendingUpload,
+  saveOrUpdatePendingUpload,
+  setStoredIdMap
+} from '@/utils/background-upload';
 import { uploadFile } from '@/utils/upload-helpers';
 import * as FileSystem from 'expo-file-system';
 import { StateCreator } from 'zustand';
@@ -53,7 +58,7 @@ export const createUploadSlice: StateCreator<StoreState, [], [], UploadSlice> = 
                  // console.log(`[UploadSlice:initializeUploads] Skipping retry for already successful/in-progress persisted upload: ${uploadId}`); // Verbose
                  // Attempt removal again in case it failed before
                  if (existingResult?.success) {
-                      await removePendingUpload(serverIdToUse, upload.audioKey);
+                      await removePendingUpload(serverIdToUse, upload.audioKey, currentLocalToServerIds);
                  }
                  continue;
              }
@@ -76,10 +81,21 @@ export const createUploadSlice: StateCreator<StoreState, [], [], UploadSlice> = 
 
   setLocalToServerId: async (localId: string, serverId: string) => {
     console.log(`[UploadSlice:setLocalToServerId] Mapping localId ${localId} to serverId ${serverId}`);
-    const previouslyUnmapped = !get().localToServerIds[localId];
-    set((state) => ({
-      localToServerIds: { ...state.localToServerIds, [localId]: serverId },
-    }));
+    const currentMap = get().localToServerIds;
+    const previouslyUnmapped = !currentMap[localId];
+    const updatedMap = { ...currentMap, [localId]: serverId };
+
+    // Update Zustand state
+    set({ localToServerIds: updatedMap });
+
+    // --- Sync with AsyncStorage for background task ---
+    try {
+        await setStoredIdMap(updatedMap); // Use the new helper
+        console.log(`[UploadSlice:setLocalToServerId] Synced updated ID map to AsyncStorage.`);
+    } catch (e) {
+        console.error(`[UploadSlice:setLocalToServerId] Failed to sync ID map to AsyncStorage:`, e);
+    }
+    // --- End Sync ---
 
     if (previouslyUnmapped) {
         console.log(`[UploadSlice:setLocalToServerId] First time serverId received for ${localId}. Processing associated persisted uploads.`);
@@ -110,7 +126,8 @@ export const createUploadSlice: StateCreator<StoreState, [], [], UploadSlice> = 
                  if (existingResult?.success || (currentProgress !== undefined && currentProgress >= 0)) {
                       console.log(`[UploadSlice:setLocalToServerId] Skipping foreground trigger for already successful/in-progress upload: ${uploadId}`);
                        if (existingResult?.success) {
-                            await removePendingUpload(serverId, upload.audioKey); // Attempt removal again
+                            // Pass map to removePendingUpload
+                            await removePendingUpload(serverId, upload.audioKey, updatedMap);
                        }
                       continue;
                  }
@@ -137,7 +154,8 @@ export const createUploadSlice: StateCreator<StoreState, [], [], UploadSlice> = 
   saveUploadIntent: async (localConversationId: string, audioUri: string, audioKey: string) => {
     console.log(`[UploadSlice:saveUploadIntent] Called for localId: ${localConversationId}, key: ${audioKey}`);
 
-    const serverId = get().localToServerIds[localConversationId];
+    const currentLocalToServerIds = get().localToServerIds; // Get map from state
+    const serverId = currentLocalToServerIds[localConversationId];
 
     // Always save/update AsyncStorage first
     await saveOrUpdatePendingUpload({
@@ -158,7 +176,8 @@ export const createUploadSlice: StateCreator<StoreState, [], [], UploadSlice> = 
        if (existingResult?.success || (currentProgress !== undefined && currentProgress >= 0)) {
            console.log(`[UploadSlice:saveUploadIntent] Skipping foreground upload for already successful/in-progress item: ${uploadId}`);
             if (existingResult?.success) {
-                await removePendingUpload(serverId, audioKey); // Attempt removal again
+                // Pass map to removePendingUpload
+                await removePendingUpload(serverId, audioKey, currentLocalToServerIds);
             }
        } else {
             // Start foreground upload
@@ -188,6 +207,7 @@ export const createUploadSlice: StateCreator<StoreState, [], [], UploadSlice> = 
     }
 
     const uploadId = `${conversationId}_${audioKey}`; // Unique ID based on SERVER ID
+    const currentLocalToServerIds = get().localToServerIds; // Get map from state
     console.log(`[UploadSlice:uploadAudio] STARTING UploadId=${uploadId}, ServerConvId=${conversationId}, LocalConvId=${localConversationId || 'N/A'}, Key=${audioKey}, IsPersistedRetry=${isPersistedRetry}, URI=${audioUri}`);
 
     // --- File Check ---
@@ -199,7 +219,8 @@ export const createUploadSlice: StateCreator<StoreState, [], [], UploadSlice> = 
             uploadResults: { ...state.uploadResults, [uploadId]: { success: false, error: 'Local file missing', audioUri, conversationId, audioKey, localConversationId } },
             uploadProgress: { ...state.uploadProgress, [uploadId]: -1 },
           }));
-          await removePendingUpload(conversationId, audioKey); // Remove from AsyncStorage if file missing
+          // Pass map to removePendingUpload
+          await removePendingUpload(conversationId, audioKey, currentLocalToServerIds);
           return;
       }
     } catch (infoError) {
@@ -245,7 +266,8 @@ export const createUploadSlice: StateCreator<StoreState, [], [], UploadSlice> = 
 
       if (result.success) {
          console.log(`[UploadSlice:uploadAudio] Foreground upload SUCCESSFUL for ${uploadId}.`);
-         await removePendingUpload(conversationId, audioKey); // Remove from AsyncStorage
+         // Pass map to removePendingUpload
+         await removePendingUpload(conversationId, audioKey, currentLocalToServerIds);
       } else {
         console.error(`[UploadSlice:uploadAudio] Foreground upload FAILED for ${uploadId}: ${result.error}`);
          console.warn(`[UploadSlice:uploadAudio] Upload failed for ${uploadId}. Pending record should exist in AsyncStorage for background task.`);
