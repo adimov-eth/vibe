@@ -236,6 +236,7 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
     if (isRecording) {
       // --- Stop Recording ---
       console.log("[useRecordingFlow] handleToggleRecording: Stopping recording...");
+      let stopErrorOccurred = false; // Flag to track errors in this block
       try {
         // Get current recording object from state *before* potential state changes
         const currentRecObject = recordingObjectRef.current;
@@ -248,7 +249,8 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
             console.warn("[useRecordingFlow] Stop called but recordingObject ref is null.");
             // Attempt cleanup and reset state - avoid calling cleanup directly if stopping failed early
             setIsProcessingLocally(false);
-            setIsButtonDisabled(false); // Re-enable button
+            // setIsButtonDisabled(false); // Handled in finally
+            stopErrorOccurred = true; // Treat this as an error for finally
             return; // Exit early
         }
 
@@ -275,7 +277,8 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
                  console.error("[useRecordingFlow] Critical: Server ID missing after first recording stopped.");
                  setError("Failed to associate recording with a conversation.");
                  setIsProcessingLocally(false);
-                 await cleanup(); // Full cleanup needed here
+                 await cleanup();
+                 stopErrorOccurred = true; // Treat this as an error for finally
                  return;
            }
         }
@@ -295,6 +298,7 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
         }
 
       } catch (err) {
+        stopErrorOccurred = true; // Mark error occurred
         setError(`Failed to stop recording: ${err instanceof Error ? err.message : String(err)}`);
         console.error('[useRecordingFlow] Error stopping recording:', err);
         // Attempt FULL cleanup on stop error
@@ -303,26 +307,30 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
         setIsProcessingLocally(false);
         setIsFlowCompleteLocally(false);
         setIsRecording(false); // Ensure recording state is false
-        setIsButtonDisabled(false); // Ensure button is enabled
+        // setIsButtonDisabled(false); // Handled in finally
 
 
       } finally {
-        // Redundant? Cleanup should handle this, but ensure processing is off
+        // Always ensure processing is false after trying to stop
         setIsProcessingLocally(false);
-         // Ensure button is enabled unless flow is complete (handled elsewhere) or error occurred (handled above)
-        if (!isFlowCompleteLocally && !error) {
+         // Re-enable button if stop finished WITHOUT error AND the flow isn't complete
+         if (!stopErrorOccurred && !isFlowCompleteLocally) {
              setIsButtonDisabled(false);
-        }
+             console.log("[useRecordingFlow] Stop Recording finally: Re-enabled button.");
+         } else {
+              console.log(`[useRecordingFlow] Stop Recording finally: Button remains disabled (Error: ${stopErrorOccurred}, FlowComplete: ${isFlowCompleteLocally}) or handled by cleanup.`);
+         }
       }
     } else {
       // --- Start Recording ---
       console.log("[useRecordingFlow] handleToggleRecording: Starting recording...");
       let conversationCreated = false;
+      let startErrorOccurred = false; // Flag to track errors in this block
       try {
         // Reset potentially stale states *before* checks
         setIsFlowCompleteLocally(false);
         setIsProcessingLocally(false);
-        setError(null);
+        setError(null); // Clear previous errors before starting
 
         // **Critical Check:** Ensure previous recording object is null before proceeding
         if (recordingObjectRef.current) {
@@ -340,7 +348,8 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
         const canCreate = await checkCanCreateConversation();
         if (!canCreate) {
           setError('Usage limit reached or subscription required');
-          setIsButtonDisabled(false);
+          //   setIsButtonDisabled(false); // Handled in finally
+          startErrorOccurred = true;
           return;
         }
 
@@ -348,7 +357,8 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
         const hasPermission = await checkPermissions();
         if (!hasPermission) {
           setError('Microphone permission denied');
-          setIsButtonDisabled(false);
+          //   setIsButtonDisabled(false); // Handled in finally
+          startErrorOccurred = true;
           return;
         }
 
@@ -386,6 +396,7 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
         console.log('[useRecordingFlow] Recording started successfully.');
 
       } catch (err) {
+        startErrorOccurred = true; // Mark error occurred
         const errorMessage = err instanceof Error ? err.message : String(err);
         setError(`Failed to start recording: ${errorMessage}`);
         console.error('[useRecordingFlow] Error starting recording:', err);
@@ -394,16 +405,20 @@ export const useRecordingFlow = ({ modeId }: UseRecordingFlowProps): RecordingFl
         // Ensure flags are reset AFTER cleanup attempt
         setIsRecording(false);
         setRecordingObject(null); // Ensure object is cleared from state
-        setIsButtonDisabled(false); // Ensure button is enabled
+        // setIsButtonDisabled(false); // Handled in finally
 
         if (conversationCreated) {
              console.error("[useRecordingFlow] Conversation creation might have failed.");
         }
       } finally {
-          // Ensure button is re-enabled ONLY if not currently recording
-          // (it might have been enabled in the catch block already)
-          if (!recordingObjectRef.current) { // Use the local state variable directly
+          // Re-enable the button if starting was successful (no error occurred)
+          if (!startErrorOccurred) {
              setIsButtonDisabled(false);
+             console.log("[useRecordingFlow] Start Recording finally: Re-enabled button after successful start.");
+          } else {
+              // If an error occurred before startAsync, we might need to ensure it's false
+              setIsButtonDisabled(false); // Ensure re-enabled on error path too
+              console.log("[useRecordingFlow] Start Recording finally: Button re-enabled following error.");
           }
       }
     }
