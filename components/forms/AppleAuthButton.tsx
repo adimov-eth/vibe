@@ -114,9 +114,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   subtitle: {
-    ...typography.body1,
-    color: colors.mediumText,
+    ...typography.body2,
     textAlign: 'center',
+    color: colors.text.secondary,
     marginBottom: 24,
   },
   button: {

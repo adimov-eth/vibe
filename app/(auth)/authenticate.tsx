@@ -157,7 +157,7 @@ const styles = StyleSheet.create({
   },
   footerText: {
     ...typography.caption,
-    color: colors.mediumText,
+    color: colors.text.secondary,
     textAlign: 'center',
     lineHeight: 20,
   },

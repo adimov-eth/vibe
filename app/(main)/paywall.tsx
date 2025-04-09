@@ -375,7 +375,7 @@ const localStyles = StyleSheet.create({
   heroSubtitle: {
     ...typography.body1,
     textAlign: 'center',
-    color: colors.mediumText,
+    color: colors.text.secondary,
   },
   usageCard: {
     margin: spacing.lg,
@@ -390,7 +390,7 @@ const localStyles = StyleSheet.create({
   },
   usageStatLabel: {
     ...typography.caption,
-    color: colors.mediumText,
+    color: colors.text.secondary,
     marginBottom: spacing.xs,
   },
   usageStatValue: {
@@ -429,7 +429,7 @@ const localStyles = StyleSheet.create({
   },
   featureDescription: {
     ...typography.body2,
-    color: colors.mediumText,
+    color: colors.text.secondary,
   },
   plansSection: {
     padding: spacing.lg,
@@ -438,7 +438,7 @@ const localStyles = StyleSheet.create({
     marginVertical: spacing.xl,
   },
   planCard: {
-    backgroundColor: colors.cardBackground,
+    backgroundColor: colors.surface,
     borderRadius: 12,
     padding: spacing.lg,
     marginBottom: spacing.md,
@@ -459,7 +459,7 @@ const localStyles = StyleSheet.create({
   },
   bestValueText: {
     ...typography.caption,
-    color: colors.white,
+    color: '#FFFFFF',
     fontWeight: 'bold',
   },
   planHeader: {
@@ -479,12 +479,12 @@ const localStyles = StyleSheet.create({
   },
   periodText: {
     ...typography.body2,
-    color: colors.mediumText,
+    color: colors.text.secondary,
     marginLeft: spacing.xs,
   },
   planDescription: {
     ...typography.body2,
-    color: colors.mediumText,
+    color: colors.text.secondary,
     marginBottom: spacing.md,
   },
   radioButton: {
@@ -506,7 +506,7 @@ const localStyles = StyleSheet.create({
   },
   disclaimer: {
     ...typography.caption,
-    color: colors.lightText,
+    color: colors.inactive,
     textAlign: 'center',
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xl,
@@ -519,7 +519,7 @@ const localStyles = StyleSheet.create({
   },
   loadingText: {
     ...typography.body1,
-    color: colors.mediumText,
+    color: colors.text.secondary,
     marginTop: spacing.md,
   },
   errorContainer: {

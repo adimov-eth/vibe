@@ -60,13 +60,6 @@ export const colors = {
   active: '#22C55E',
   inactive: '#94A3B8',
 
-  // Legacy support (for backward compatibility)
-  white: '#FFFFFF',
-  mediumText: '#475569',
-  lightText: '#94A3B8',
-  darkText: '#0F172A',
-  cardBackground: '#FFFFFF',
-
   status: {
     success: '#4CAF50',
     warning: '#FFC107',

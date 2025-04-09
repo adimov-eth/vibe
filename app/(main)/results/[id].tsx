@@ -77,8 +77,12 @@ export default function Results() {
 
   // Determine overall state: Uploading -> Processing (WebSocket) -> Completed/Error
   const isLoading = conversationLoading || (uploadStatus.completed && isResultLoading);
-  const finalError = resultError?.message || (uploadStatus.failed ? uploadStatus.error : null) || (conversationError ? 'Failed to load conversation details' : null);
-  const finalStatus = resultData?.status || (uploadStatus.completed ? 'processing' : 'uploading'); // Default to 'uploading' if uploads not done
+  // Combine errors: WS result error OR upload error OR conversation fetch error
+  const finalError: string | null = resultError || uploadStatus.error || (conversationError ? 'Failed to load conversation details' : null);
+  // Determine status: Start with upload status, then WS status
+  const finalStatus = uploadStatus.failed ? 'error' : 
+                      !uploadStatus.completed ? 'uploading' : 
+                      (resultData?.status || 'processing'); // If uploads done, use WS status (or 'processing' if WS hasn't reported yet)
 
   // --- Handlers ---
   const handleGoToHome = React.useCallback(() => {
@@ -177,7 +181,7 @@ export default function Results() {
             recommendations: [], // Add recommendations if available later
             progress: 100
           } : null}
-          error={finalError} // Pass combined error string
+          error={finalError} // Pass combined error string (already a string or null)
           accentColor={accentColor}
           onNewConversation={handleGoToHome}
           onRetry={handleRetry} // Pass unified retry handler
@@ -205,13 +209,13 @@ const styles = StyleSheet.create({
     ...typography.body1,
     marginBottom: spacing.xl,
     textAlign: 'center',
-    color: colors.mediumText,
+    color: colors.text.secondary,
   },
   processingText: {
     ...typography.body1,
     marginTop: spacing.lg,
     textAlign: 'center',
-    color: colors.mediumText,
+    color: colors.text.secondary,
   },
   progressContainer: {
     width: '80%', // Adjust width as needed
@@ -230,7 +234,7 @@ const styles = StyleSheet.create({
   },
   progressText: {
     marginTop: spacing.xs,
-    color: colors.mediumText, // Adjusted color
+    color: colors.text.secondary,
   },
   // Removed unused styles like container, connectionInfoContainer etc.
 });

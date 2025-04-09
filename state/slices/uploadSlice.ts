@@ -1,8 +1,8 @@
 import {
-  getPendingUploads,
-  removePendingUpload,
-  saveOrUpdatePendingUpload,
-  setStoredIdMap
+    getPendingUploads,
+    removePendingUpload,
+    saveOrUpdatePendingUpload,
+    setStoredIdMap
 } from '@/utils/background-upload';
 import { uploadFile } from '@/utils/upload-helpers';
 import * as FileSystem from 'expo-file-system';
@@ -268,6 +268,18 @@ export const createUploadSlice: StateCreator<StoreState, [], [], UploadSlice> = 
          console.log(`[UploadSlice:uploadAudio] Foreground upload SUCCESSFUL for ${uploadId}.`);
          // Pass map to removePendingUpload
          await removePendingUpload(conversationId, audioKey, currentLocalToServerIds);
+
+         // --- Delete local file after successful upload --- 
+         try {
+           console.log(`[UploadSlice:uploadAudio] Deleting local file ${audioUri} after successful foreground upload.`);
+           await FileSystem.deleteAsync(audioUri, { idempotent: true });
+           console.log(`[UploadSlice:uploadAudio] Deleted local file ${audioUri}.`);
+         } catch (deleteError) {
+            console.error(`[UploadSlice:uploadAudio] Failed to delete local file ${audioUri} after foreground upload: ${deleteError}`);
+            // Do not fail the overall upload state for cleanup failure, just log it.
+         }
+         // --- End file deletion --- 
+
       } else {
         console.error(`[UploadSlice:uploadAudio] Foreground upload FAILED for ${uploadId}: ${result.error}`);
          console.warn(`[UploadSlice:uploadAudio] Upload failed for ${uploadId}. Pending record should exist in AsyncStorage for background task.`);

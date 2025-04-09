@@ -3,13 +3,14 @@ import { getAuthTokens } from '@/utils/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StateCreator } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import { StoreState, WS_URL, WebSocketMessage } from '../types';
+import { ConversationResult, StoreState, WS_URL, WebSocketMessage } from '../types';
 
 const MAX_WS_MESSAGES = 100; // Keep the last 100 messages
 
 interface WebSocketState {
   socket: WebSocket | null;
   wsMessages: WebSocketMessage[];
+  conversationResults: { [key: string]: ConversationResult };
   reconnectAttempts: number;
   maxReconnectAttempts: number;
   reconnectInterval: number;
@@ -23,6 +24,7 @@ interface WebSocketActions {
   subscribeToConversation: (conversationId: string) => Promise<void>;
   unsubscribeFromConversation: (conversationId: string) => Promise<void>;
   clearMessages: () => void;
+  getConversationResultError: (conversationId: string) => string | null;
   // Optional: Add a prune action if more complex logic is needed later
   // pruneMessages: (criteria: PruningCriteria) => void;
 }
@@ -32,6 +34,7 @@ export type WebSocketSlice = WebSocketState & WebSocketActions;
 const initialState: WebSocketState = {
   socket: null,
   wsMessages: [],
+  conversationResults: {},
   reconnectAttempts: 0,
   maxReconnectAttempts: 5, // Keep trying after 5, just with max delay
   reconnectInterval: 1000, // Initial delay 1s
@@ -46,6 +49,11 @@ export const createWebSocketSlice: StateCreator<
   WebSocketSlice
 > = immer((set, get) => ({
   ...initialState,
+
+  getConversationResultError: (conversationId: string): string | null => {
+    // Selector function to get error from the results map
+    return get().conversationResults[conversationId]?.error || null;
+  },
 
   calculateBackoff: () => {
     const state = get();
@@ -163,35 +171,105 @@ export const createWebSocketSlice: StateCreator<
          console.log('[WS Client] WebSocket Event: onmessage - Received data.');
         try {
           const message = JSON.parse(event.data) as WebSocketMessage;
+          const messageType = message.type;
 
-           console.log(`[WS Client] WebSocket Event: onmessage - Parsed message type: ${message.type}`);
+           console.log(`[WS Client] WebSocket Event: onmessage - Parsed message type: ${messageType}`);
 
           if (__DEV__) {
-              if (!['pong'].includes(message.type)) {
+              if (!['pong'].includes(messageType)) {
                   console.log('[WS Client] WebSocket Event: onmessage - Message Payload:', JSON.stringify(message, null, 2));
               }
           }
 
-          // Handle specific message types (like auth_success)
-           if (message.type === 'auth_success') {
-                console.log(`[WS Client] WebSocket Event: onmessage - Authentication successful. User ID: ${message.userId}`);
-           } else if (message.type === 'subscription_confirmed') {
-                console.log(`[WS Client] WebSocket Event: onmessage - Subscription confirmed for topic: ${message.payload.topic}`);
-           } else if (message.type === 'error' && message.payload?.error?.includes('Authentication failed')) {
-             console.error("[WS Client] WebSocket Event: onmessage - Server reported Authentication failed:", message.payload.error);
-          }
-
-          // --- Simplified Message Storage ---
+          // --- Process and Update Conversation Results State --- 
           set((state) => {
+            let conversationId: string | undefined = undefined;
+
+            // Extract conversationId based on message type
+            if (message.type === 'transcript' || message.type === 'analysis' || message.type === 'status' || message.type === 'audio') {
+              conversationId = message.payload.conversationId;
+            } else if (message.type === 'error' && message.payload.conversationId) {
+              conversationId = message.payload.conversationId;
+            }
+            
+            // If the message is relevant to a specific conversation
+            if (conversationId) {
+               // Initialize result if it doesn't exist
+               if (!state.conversationResults[conversationId]) {
+                 state.conversationResults[conversationId] = { status: 'processing', progress: 0 };
+               }
+               const currentResult = state.conversationResults[conversationId];
+
+               // Update based on message type
+               switch (message.type) {
+                 case 'transcript':
+                   currentResult.transcript = message.payload.content;
+                   currentResult.progress = Math.max(currentResult.progress, 50); // Example progress
+                   break;
+                 case 'analysis':
+                   currentResult.analysis = message.payload.content;
+                   currentResult.progress = 100;
+                   currentResult.status = 'completed'; // Analysis implies completion
+                   break;
+                 case 'status':
+                   if (message.payload.status === 'conversation_completed' || message.payload.status === 'completed') {
+                     currentResult.status = 'completed';
+                     currentResult.progress = 100;
+                     if (message.payload.gptResponse) {
+                       currentResult.analysis = message.payload.gptResponse; // Populate analysis if provided
+                     }
+                     if (message.payload.error) { // Handle potential error within completed status
+                        currentResult.status = 'error'; 
+                        currentResult.error = message.payload.error;
+                     }
+                   } else if (message.payload.status === 'error') {
+                     currentResult.status = 'error';
+                     currentResult.error = message.payload.error || 'Unknown processing error';
+                     currentResult.progress = 100;
+                   } else {
+                      // Other intermediate statuses could update progress
+                      // currentResult.status = 'processing'; // Ensure status stays processing if not completed/error
+                   }
+                   break;
+                 case 'audio':
+                   if (message.payload.status === 'transcribed') {
+                     currentResult.progress = Math.max(currentResult.progress, 40); // Example progress
+                   } else if (message.payload.status === 'failed') {
+                     currentResult.status = 'error';
+                     currentResult.error = 'Audio processing failed';
+                     currentResult.progress = 100;
+                   }
+                   break;
+                  case 'error': // Handle general errors associated with a conversation ID
+                    currentResult.status = 'error';
+                    currentResult.error = message.payload.error || 'Unknown error';
+                    currentResult.progress = 100;
+                    break;
+               }
+            } else if (message.type === 'error') {
+              // Handle global errors (not tied to a specific conversationId)
+              console.error("[WS Client] Received global error:", message.payload.error);
+              // Optionally set a global error state in the store
+              // state.globalError = message.payload.error;
+            }
+
+            // Handle non-conversation-specific messages (auth, pong, etc.)
+            if (messageType === 'auth_success') {
+              console.log(`[WS Client] WebSocket Event: onmessage - Authentication successful. User ID: ${message.userId}`);
+            } else if (messageType === 'subscription_confirmed') {
+              console.log(`[WS Client] WebSocket Event: onmessage - Subscription confirmed for topic: ${message.payload.topic}`);
+            }
+            
+            // Keep limited raw message history (optional, could be removed)
             state.wsMessages.push(message);
             if (state.wsMessages.length > MAX_WS_MESSAGES) {
               state.wsMessages = state.wsMessages.slice(-MAX_WS_MESSAGES);
             }
           });
-          // --- End Simplified Message Storage ---
+          // --- End Processing Logic ---
 
         } catch (error) {
-          console.error('[WS Client] WebSocket Event: onmessage - Failed to parse message:', error, 'Raw data:', event.data);
+          console.error('[WS Client] WebSocket Event: onmessage - Failed to parse or process message:', error, 'Raw data:', event.data);
         }
       };
 

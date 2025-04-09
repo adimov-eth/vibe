@@ -38,8 +38,7 @@ export default function Recording() {
     recordMode,
     currentPartner,
     isRecording,
-    isProcessingLocally,
-    isFlowCompleteLocally, // Still needed to trigger navigation
+    isProcessing,
     isButtonDisabled,
     handleToggleMode,
     handleToggleRecording,
@@ -51,18 +50,21 @@ export default function Recording() {
   const serverId = useStore(useCallback(state => state.localToServerIds[localId], [localId]));
   // const uploadResults = useStore(state => state.uploadResults); // <-- REMOVED (monitoring moves to Results screen)
 
-
-  // Effect to navigate IMMEDIATELY when local flow is complete AND serverId is known
+  // Effect to navigate when processing is done (after last step) AND serverId is known
   useEffect(() => {
-    if (isFlowCompleteLocally && serverId) {
-      console.log(`[RecordingScreen] Local flow complete and serverId ${serverId} known. Navigating to results...`);
+    // Determine if it *was* the last recording step that finished
+    const wasLastStep = recordMode === 'live' || (recordMode === 'separate' && currentPartner === 1); // Partner is 1 *after* P2 finishes
+    
+    // Navigate only if processing finished, serverId exists, and it was the last step
+    if (!isProcessing && serverId && wasLastStep) {
+      console.log(`[RecordingScreen] Processing finished, serverId ${serverId} known. Navigating to results...`);
       // Replace ensures user can't navigate back to the recording screen after completion
       router.replace(`../results/${serverId}`);
-    } else if (isFlowCompleteLocally && !serverId) {
-        console.log(`[RecordingScreen] Local flow complete but serverId for ${localId} not yet known. Waiting for mapping...`);
-        // Stay on this screen, show processing indicator. Navigation will occur once serverId is mapped.
+    } else if (isProcessing && serverId && wasLastStep) {
+        console.log(`[RecordingScreen] Last step recorded, processing/uploading. Waiting for completion. ServerID: ${serverId}`);
+        // Stay on this screen, show processing indicator. Navigation will occur once isProcessing becomes false.
     }
-  }, [isFlowCompleteLocally, serverId, localId, router]);
+  }, [isProcessing, serverId, recordMode, currentPartner, localId, router]);
 
   // Removed the upload monitoring useEffect
 
@@ -85,12 +87,11 @@ export default function Recording() {
   // Determine overall error state
   const displayError = recordingError;
 
-  // UI Rendering Logic
-  // Show processing indicator if processing locally OR if flow is complete but waiting for serverId mapping
-  const showProcessingIndicator = isProcessingLocally || (isFlowCompleteLocally && !serverId);
-  // const showUploadingIndicator = isWaitingForUpload && !displayError; // <-- REMOVED
+  // Show processing indicator if the hook reports processing
+  const showProcessingIndicator = isProcessing;
 
-  const isGloballyDisabled = isButtonDisabled || showProcessingIndicator; // Simplified disable state
+  // Button is disabled if hook reports disabled OR if actively processing
+  const isGloballyDisabled = isButtonDisabled || showProcessingIndicator;
 
   return (
     <Container withSafeArea>
@@ -146,7 +147,8 @@ export default function Recording() {
             <View style={styles.processingContainer}>
                <ActivityIndicator size="large" color={colors.primary} />
                <Text style={styles.processingText}>
-                 {isProcessingLocally ? 'Processing...' : 'Finishing up...'}
+                 {/* Adjust text based on recording state */} 
+                 {isRecording ? 'Processing stop...' : (serverId ? 'Finishing up...' : 'Processing...')}
                </Text>
             </View>
           ) : (
@@ -201,12 +203,12 @@ const styles = StyleSheet.create({
   recordedIndicator: { flexDirection: 'row', alignItems: 'center' },
   recordedText: { ...typography.body2, color: colors.success, marginLeft: spacing.xs },
   recordingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  recordingInstructions: { ...typography.body2, color: colors.mediumText, marginTop: spacing.md },
+  recordingInstructions: { ...typography.body2, color: colors.text.secondary, marginTop: spacing.md },
   errorContainer: { backgroundColor: `${colors.error}20`, borderRadius: 8, padding: spacing.md, marginTop: spacing.md },
   errorText: { ...typography.body2, color: colors.error, textAlign: 'center' },
   waveformContainer: { height: 120, marginVertical: spacing.lg },
   processingContainer: { alignItems: 'center' },
-  processingText: { ...typography.body2, color: colors.mediumText, marginTop: spacing.md },
+  processingText: { ...typography.body2, color: colors.text.secondary, marginTop: spacing.md },
   progressContainer: { width: '80%', marginTop: spacing.md },
   progressBackground: { height: 8, backgroundColor: colors.border, borderRadius: 4, overflow: 'hidden' },
   progressBar: { height: '100%', backgroundColor: colors.primary },

@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
   },
   sectionSubtitle: {
     ...typography.body2,
-    color: colors.mediumText,
+    color: colors.text.secondary,
   },
   modesContainer: {
     width: '100%',
@@ -170,7 +170,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     ...typography.body1,
-    color: colors.mediumText,
+    color: colors.text.secondary,
     marginTop: spacing.md,
   },
   errorContainer: {

@@ -173,6 +173,15 @@ export type WebSocketMessage =
   | PongMessage
   | AuthSuccessMessage;
 
+// Added ConversationResult Type
+export interface ConversationResult {
+  transcript?: string;
+  analysis?: string;
+  status: 'processing' | 'completed' | 'error';
+  error?: string | null; // Allow null
+  progress: number;
+}
+
 export interface SubscriptionSlice {
   subscriptionStatus: SubscriptionStatus | null;
   usageStats: UsageStats | null;
@@ -202,6 +211,8 @@ export interface WebSocketSlice {
   subscribeToConversation: (conversationId: string) => Promise<void>;
   unsubscribeFromConversation: (conversationId: string) => Promise<void>;
   clearMessages: () => void;
+  conversationResults: { [key: string]: ConversationResult };
+  getConversationResultError: (conversationId: string) => string | null;
 }
 
 export interface UploadSlice {
