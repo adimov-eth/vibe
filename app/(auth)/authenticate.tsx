@@ -54,25 +54,44 @@ export default function Authenticate() {
         }),
       });
 
-      const result = await response.json() as AppleAuthResponse;
+      // Explicitly type the expected response structure
+      interface BackendAuthResponse {
+          success: boolean;
+          data?: { user: { id: string } };
+          error?: string;
+          code?: string; // Added for the new error code
+      }
 
-      if (!response.ok) {
-        // Check for specific error code sent from the server
-        if (result.error && result.error.code === 'EMAIL_ALREADY_EXISTS') {
-          setError(result.error.message || "Email already associated with another account.");
-          showToast.error('Error', result.error.message || "Email already associated with another account.");
-        } else {
-          throw new Error(result.error?.message || 'Authentication failed');
-        }
+      const result = await response.json() as BackendAuthResponse; // Use the interface
 
-        setIsLoading(false);
-        return;
+      if (!response.ok || !result.success) {
+          // Check for the specific EMAIL_ALREADY_EXISTS code
+          if (result.code === 'EMAIL_ALREADY_EXISTS') {
+              const specificMessage = result.error || "This email is already linked to another account.";
+              console.warn(`[AppleAuth] Email conflict: ${specificMessage}`);
+              setError(specificMessage); 
+              showToast.error('Authentication Failed', specificMessage);
+          } else {
+              // Handle other errors
+              const errorMessage = result.error || 'Authentication failed on backend';
+              console.error(`[AppleAuth] Backend auth failed: ${errorMessage}`);
+              throw new Error(errorMessage);
+          }
+          setIsLoading(false);
+          return; // Stop execution after handling error
+      }
+
+      // Ensure user ID exists on success
+      const userId = result.data?.user?.id;
+      if (!userId) {
+          console.error('[AppleAuth] Backend success response missing user ID.', result);
+          throw new Error('Authentication succeeded but user ID was missing.');
       }
 
       // Store authentication data using the utility function
       await storeAuthTokens({
         identityToken,
-        userId: result.data.user.id,
+        userId: userId, // Use validated userId
         email: userData.email ?? undefined,
         fullName: userData.fullName ?? undefined,
       });

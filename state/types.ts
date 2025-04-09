@@ -33,9 +33,11 @@ export interface UploadResult {
   localConversationId?: string;
 }
 
+// Note: Backend API (GET /subscriptions/status) now provides expiresDate
+// consistently as milliseconds or null.
 export interface SubscriptionStatus {
   isActive: boolean;
-  expiresDate: number | null;
+  expiresDate: number | null; // Expect milliseconds or null
   type: string | null;
   subscriptionId: number | null;
 }

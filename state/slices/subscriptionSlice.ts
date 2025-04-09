@@ -135,17 +135,27 @@ export const createSubscriptionSlice: StateCreator<
 
     getUsageStats: async () => {
       try {
+        console.log('[Store:getUsageStats] Fetching usage stats...');
         const authHeader = await getAuthToken();
-        const response = await fetch(`${API_URL}/usage/stats`, {
+        const response = await fetch(`${API_URL}/users/usage`, {
           headers: { Authorization: authHeader },
         });
 
-        if (!response.ok) throw new Error('Failed to fetch usage stats');
+        if (!response.ok) {
+          const errorBody = await response.text();
+          console.error(`[Store:getUsageStats] Failed. Status: ${response.status}, Body: ${errorBody}`);
+          throw new Error(`Failed to fetch usage stats (Status: ${response.status})`);
+        }
         const data = await response.json();
+        if (!data.usage) {
+          console.error("[Store:getUsageStats] Invalid response structure: 'usage' key missing.", data);
+          throw new Error('Invalid usage data received from server');
+        }
+        console.log('[Store:getUsageStats] Success. Usage:', data.usage);
         set({ usageStats: data.usage });
         return data;
       } catch (err) {
-        console.error('[Store] Error in getUsageStats:', err);
+        console.error('[Store:getUsageStats] Error fetching usage stats:', err);
         throw err;
       }
     },
