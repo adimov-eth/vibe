@@ -51,7 +51,13 @@
           "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-dev-client",
+        {
+          "launchMode": "most-recent"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
@@ -61,9 +67,9 @@
         "origin": false
       },
       "eas": {
-        "projectId": "e4b31cdd-792b-423d-985a-f946e5de6768"
+        "projectId": "01a5a352-a6fd-45a5-b773-0406f2202c84"
       }
     },
-    "owner": "adimov"
+    "owner": "three30"
   }
 }

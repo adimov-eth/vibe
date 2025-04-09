@@ -18,6 +18,15 @@ import { StateCreator } from 'zustand';
 import { StoreState, SubscriptionSlice, UsageStats } from '../types';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
+if (!API_URL) {
+  console.error('[Store] EXPO_PUBLIC_API_URL environment variable is not set');
+  throw new Error('API URL is not configured');
+}
+
+export const SUBSCRIPTION_SKUS = {
+  MONTHLY: '2a',
+  YEARLY: '2b',
+} as const;
 
 // Platform-specific subscription product interface
 export interface PlatformSubscriptionProduct {
@@ -40,11 +49,6 @@ function isIOSSubscription(product: Subscription): product is SubscriptionIOS {
 function isAndroidSubscription(product: Subscription): product is SubscriptionAndroid {
   return Platform.OS === 'android';
 }
-
-export const SUBSCRIPTION_SKUS = {
-  MONTHLY: 'vibecheck.subscription.monthly',
-  YEARLY: 'vibecheck.subscription.yearly',
-} as const;
 
 export const createSubscriptionSlice: StateCreator<
   StoreState,
@@ -78,8 +82,13 @@ export const createSubscriptionSlice: StateCreator<
   };
 
   const getAuthToken = async () => {
+    console.log('[Store] Getting authorization header');
     const authHeader = await getAuthorizationHeader();
-    if (!authHeader) throw new Error('No authentication token');
+    if (!authHeader) {
+      console.error('[Store] No authentication token available');
+      throw new Error('Authentication required. Please sign in to access subscription features.');
+    }
+    console.log('[Store] Authorization header retrieved successfully');
     return authHeader;
   };
 
@@ -143,50 +152,100 @@ export const createSubscriptionSlice: StateCreator<
 
     initializeStore: async () => {
       try {
+        console.log('[Store] Starting subscription store initialization');
         set({ subscriptionLoading: true, subscriptionError: null });
-        await initConnection();
-
+        
+        console.log('[Store] Initializing IAP connection');
+        try {
+          await initConnection();
+          console.log('[Store] IAP connection initialized successfully');
+        } catch (initError) {
+          console.error('[Store] Failed to initialize IAP connection:', initError);
+          throw initError;
+        }
+        
+        console.log('[Store] Setting up purchase listeners');
         purchaseUpdateSubscription = purchaseUpdatedListener(handlePurchaseUpdate);
         purchaseErrorSubscription = purchaseErrorListener(handlePurchaseError);
-
-        const rawProducts = await getSubscriptions({
-          skus: Object.values(SUBSCRIPTION_SKUS),
-        });
-
-        // Map raw products to our consistent PlatformSubscriptionProduct interface
-        const mappedProducts: PlatformSubscriptionProduct[] = rawProducts.map((product): PlatformSubscriptionProduct => {
-          let price = 'N/A';
-          let offerDetails: PlatformSubscriptionProduct['subscriptionOfferDetails'] | undefined = undefined;
-
-          if (isIOSSubscription(product)) {
-            // iOS-specific handling
-            price = String(product.price ?? 'N/A');
-          } else if (isAndroidSubscription(product)) {
-            // Android-specific handling
-            price = String(product.price ?? 'N/A');
-            offerDetails = product.subscriptionOfferDetails?.map(offer => ({
-              offerToken: offer.offerToken,
-            }));
+        
+        const skus = Object.values(SUBSCRIPTION_SKUS);
+        console.log('[Store] Fetching subscription products with specific SKUs:', skus);
+        console.log('[Store] Current platform:', Platform.OS);
+        console.log('[Store] Bundle ID:', require('../../../app.json').expo.ios.bundleIdentifier);
+        
+        try {
+          const rawProducts = await getSubscriptions({
+            skus: skus,
+          });
+          
+          if (rawProducts.length === 0) {
+            console.log('[Store] No products found. This could be due to:');
+            console.log('- Products not properly configured in App Store Connect');
+            console.log('- Missing metadata for products');
+            console.log('- Bundle ID mismatch');
+            console.log('- Not using a sandbox test account');
           }
+          
+          console.log(`[Store] Found ${rawProducts.length} subscription products:`, 
+            rawProducts.map(p => ({
+              productId: p.productId,
+              title: p.title,
+              description: p.description,
+              price: p.price
+          })));
 
-          return {
-            productId: product.productId,
-            title: product.title,
-            description: product.description,
-            price,
-            // Only include platform-specific fields when available
-            ...(isIOSSubscription(product) && { localizedPrice: String(product.price) }),
-            ...(isAndroidSubscription(product) && { subscriptionOfferDetails: offerDetails }),
-          };
-        });
+          // Map raw products to our consistent PlatformSubscriptionProduct interface
+          const mappedProducts: PlatformSubscriptionProduct[] = rawProducts.map((product): PlatformSubscriptionProduct => {
+            let price = 'N/A';
+            let offerDetails: PlatformSubscriptionProduct['subscriptionOfferDetails'] | undefined = undefined;
 
-        set({ subscriptionProducts: mappedProducts });
+            if (isIOSSubscription(product)) {
+              console.log('[Store] Processing iOS product:', {
+                productId: product.productId,
+                title: product.title,
+                price: product.price,
+                description: product.description
+              });
+              price = String(product.price ?? 'N/A');
+            } else if (isAndroidSubscription(product)) {
+              console.log('[Store] Processing Android product:', {
+                productId: product.productId,
+                title: product.title,
+                price: product.price,
+                description: product.description
+              });
+              price = String(product.price ?? 'N/A');
+              offerDetails = product.subscriptionOfferDetails?.map(offer => ({
+                offerToken: offer.offerToken,
+              }));
+            }
 
+            return {
+              productId: product.productId,
+              title: product.title,
+              description: product.description,
+              price,
+              ...(isIOSSubscription(product) && { localizedPrice: String(product.price) }),
+              ...(isAndroidSubscription(product) && { subscriptionOfferDetails: offerDetails }),
+            };
+          });
+
+          console.log('[Store] Mapped products:', mappedProducts);
+          set({ subscriptionProducts: mappedProducts });
+        } catch (err) {
+          console.error('[Store] Error fetching products:', err instanceof Error ? err.message : err);
+          throw new Error('Failed to fetch subscription products');
+        }
+
+        console.log('[Store] Checking subscription status and usage stats');
         await Promise.all([
           get().checkSubscriptionStatus(),
           get().getUsageStats(),
         ]);
+        
+        console.log('[Store] Store initialization completed successfully');
       } catch (err) {
+        console.error('[Store] Failed to initialize subscription store:', err);
         set({
           subscriptionError:
             err instanceof Error ? err : new Error('Failed to connect to store'),
