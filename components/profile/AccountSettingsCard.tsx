@@ -4,27 +4,18 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 
 interface AccountSettingsCardProps {
-  onUpdatePasswordPress: () => void;
   onSignOutPress: () => void;
 }
 
 export const AccountSettingsCard: React.FC<AccountSettingsCardProps> = ({
-  onUpdatePasswordPress,
   onSignOutPress,
 }) => {
   return (
     <View style={styles.card}>
       <Button
-        title="Update Password"
-        onPress={onUpdatePasswordPress}
-        variant="outline"
-        leftIcon="lock-closed-outline"
-        style={styles.button}
-      />
-      <Button
         title="Sign Out"
         onPress={onSignOutPress}
-        variant="primary" // Consider 'destructive' variant if available/appropriate
+        variant="primary"
         leftIcon="log-out-outline"
         style={styles.button}
       />
@@ -34,10 +25,9 @@ export const AccountSettingsCard: React.FC<AccountSettingsCardProps> = ({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.background.surface,
+    backgroundColor: colors.background.secondary,
     borderRadius: layout.borderRadius.lg,
     padding: spacing.lg,
-    ...layout.shadows.small,
   },
   button: {
     marginBottom: spacing.md,

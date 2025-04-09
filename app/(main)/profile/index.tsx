@@ -1,4 +1,5 @@
 import { AppBar } from '@/components/layout/AppBar';
+import { AccountSettingsCard } from '@/components/profile/AccountSettingsCard';
 import { AppDataCard } from '@/components/profile/AppDataCard';
 import { SubscriptionCard } from '@/components/profile/SubscriptionCard';
 import { Button } from '@/components/ui/Button';
@@ -112,7 +113,6 @@ export default function Profile() {
           />
         </Section>
 
-
         <Section title="App Data">
           <AppDataCard
             isClearingCache={isClearing}
@@ -122,6 +122,12 @@ export default function Profile() {
             currentUsage={currentUsage}
             usageLimit={usageLimit}
             onViewPaywallPress={navigateToPaywall}
+          />
+        </Section>
+
+        <Section title="Account Settings">
+          <AccountSettingsCard
+            onSignOutPress={handleSignOut}
           />
         </Section>
       </ScrollView>

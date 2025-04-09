@@ -13,7 +13,8 @@
       "jsEngine": "jsc",
       "supportsTablet": true,
       "bundleIdentifier": "com.three30.vibecheck",
-      "usesAppleSignIn": true
+      "usesAppleSignIn": true,
+      "appleTeamId": "Z2Q563NWA3"
     },
     "android": {
       "adaptiveIcon": {
@@ -60,9 +61,9 @@
         "origin": false
       },
       "eas": {
-        "projectId": "01a5a352-a6fd-45a5-b773-0406f2202c84"
+        "projectId": "e4b31cdd-792b-423d-985a-f946e5de6768"
       }
     },
-    "owner": "three30"
+    "owner": "adimov"
   }
 }

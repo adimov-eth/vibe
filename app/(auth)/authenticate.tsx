@@ -17,6 +17,10 @@ interface AppleAuthResponse {
       id: string;
     };
   };
+  error?: {
+    code: string;
+    message: string;
+  };
 }
 
 export default function Authenticate() {
@@ -50,12 +54,20 @@ export default function Authenticate() {
         }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Authentication failed');
-      }
-
       const result = await response.json() as AppleAuthResponse;
+
+      if (!response.ok) {
+        // Check for specific error code sent from the server
+        if (result.error && result.error.code === 'EMAIL_ALREADY_EXISTS') {
+          setError(result.error.message || "Email already associated with another account.");
+          showToast.error('Error', result.error.message || "Email already associated with another account.");
+        } else {
+          throw new Error(result.error?.message || 'Authentication failed');
+        }
+
+        setIsLoading(false);
+        return;
+      }
 
       // Store authentication data using the utility function
       await storeAuthTokens({
@@ -117,7 +129,7 @@ export default function Authenticate() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.xl,
     paddingTop: spacing.xxl,
     paddingBottom: spacing.xl,
     justifyContent: 'space-between',
@@ -125,22 +137,28 @@ const styles = StyleSheet.create({
   logoContainer: {
     alignItems: 'center',
     marginTop: spacing.xxl,
+    marginBottom: spacing.xl,
   },
   appName: {
     ...typography.heading1,
     fontSize: 32,
-    marginTop: spacing.md,
+    marginTop: spacing.lg,
+    marginBottom: spacing.md,
   },
   authContainer: {
     width: '100%',
     marginVertical: spacing.xxl,
+    paddingHorizontal: spacing.md,
   },
   footer: {
-    marginTop: spacing.xl,
+    marginTop: 'auto',
+    marginBottom: spacing.xl,
+    paddingHorizontal: spacing.lg,
   },
   footerText: {
     ...typography.caption,
     color: colors.mediumText,
     textAlign: 'center',
+    lineHeight: 20,
   },
-}); 
+});
