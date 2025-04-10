@@ -7,35 +7,35 @@ import { colors, layout, spacing, typography } from '@/constants/styles';
 import { useAuthentication } from '@/hooks/useAuthentication';
 import { useClearCache } from '@/hooks/useClearCache';
 import { useUsage } from '@/hooks/useUsage';
+import useStore from '@/state';
+import type { StoreState } from '@/state/types';
 import { useRouter } from 'expo-router';
-import React, { useEffect } from 'react';
+import React, { useCallback } from 'react';
 import { ActivityIndicator, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useShallow } from 'zustand/react/shallow';
 
 export default function Profile() {
   const router = useRouter();
+
   const { user, signOut } = useAuthentication();
   const { clearCache, isClearing, error: clearError } = useClearCache();
-  const { subscriptionStatus, usageStats, loading, error, loadData } = useUsage();
+  const { subscriptionStatus, usageStats } = useStore(
+      useShallow((state: StoreState) => ({
+        subscriptionStatus: state.subscriptionStatus,
+        usageStats: state.usageStats,
+      }))
+  );
+  const { loading, error, refreshUsageData } = useUsage();
 
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!subscriptionStatus || !usageStats) {
-        await loadData(); // Load initial data if not present
-      }
-    };
-    fetchData();
-  }, []); // Removed dependency array to rely on explicit load/refresh
+  const handleBackPress = useCallback(() => router.back(), [router]);
+  const handleSignOut = useCallback(async () => await signOut(), [signOut]);
+  const navigateToPaywall = useCallback(() => router.push('/(main)/paywall'), [router]);
 
-  const handleBackPress = () => router.back();
-  const handleSignOut = async () => await signOut();
-  const navigateToPaywall = () => router.push('/(main)/paywall');
-
-  // Calculate derived values (memoize if necessary, but likely fine here)
   const currentUsage = usageStats?.currentUsage ?? 0;
   const remainingConversations = usageStats?.remainingConversations ?? 0;
-  const usageLimit = usageStats ? currentUsage + remainingConversations : 0;
+  const usageLimit = usageStats?.limit ?? 0;
 
-  const ProfileHeader = React.memo(() => ( // Memoize static header
+  const ProfileHeader = React.memo(() => (
     <View style={styles.profileHeader}>
       <View style={styles.avatarContainer}>
         <Text style={styles.avatarText}>
@@ -51,8 +51,7 @@ export default function Profile() {
     </View>
   ));
 
-  // Loading state
-  if (loading && !usageStats && !subscriptionStatus) { // More precise initial loading check
+  if (loading && !usageStats && !subscriptionStatus) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <AppBar title="Profile" showBackButton={true} onBackPress={handleBackPress} />
@@ -64,14 +63,13 @@ export default function Profile() {
     );
   }
 
-  // Error state
-  if (error && !usageStats && !subscriptionStatus) { // More precise initial error check
+  if (error && !usageStats && !subscriptionStatus) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <AppBar title="Profile" showBackButton={true} onBackPress={handleBackPress} />
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{error.message || 'Failed to load profile data'}</Text>
-          <Button title="Retry" variant="primary" onPress={loadData} style={styles.retryButton}/>
+          <Button title="Retry" variant="primary" onPress={refreshUsageData} style={styles.retryButton}/>
         </View>
       </SafeAreaView>
     );
@@ -82,7 +80,7 @@ export default function Profile() {
       <AppBar
         title="Profile"
         showBackButton={true}
-        showAvatar={false} // Avatar is shown in the header below
+        showAvatar={false}
         onBackPress={handleBackPress}
       />
       <ScrollView
@@ -90,18 +88,18 @@ export default function Profile() {
         contentContainerStyle={styles.contentContainer}
         refreshControl={
            <RefreshControl
-             refreshing={loading} // Use the 'loading' state for the refreshing indicator
-             onRefresh={loadData} // Call 'loadData' when pulled
+             refreshing={loading}
+             onRefresh={refreshUsageData}
              tintColor={colors.primary}
+             colors={[colors.primary]}
            />
         }
        >
         <ProfileHeader />
 
-        {/* Display error inline if it occurs during refresh */}
-        {error && (
+        {error && (usageStats || subscriptionStatus) && (
            <View style={styles.inlineErrorContainer}>
-              <Text style={styles.inlineErrorText}>Error refreshing data: {error.message}</Text>
+              <Text style={styles.inlineErrorText}>Could not refresh data: {error.message}</Text>
            </View>
         )}
 
@@ -118,9 +116,12 @@ export default function Profile() {
             isClearingCache={isClearing}
             onClearCachePress={clearCache}
             clearCacheError={clearError}
-            showDevOptions={__DEV__} // Show dev options only in development
+            showDevOptions={__DEV__}
             currentUsage={currentUsage}
             usageLimit={usageLimit}
+            remainingConversations={remainingConversations}
+            resetDate={usageStats?.resetDate}
+            isSubscribed={usageStats?.isSubscribed ?? false}
             onViewPaywallPress={navigateToPaywall}
           />
         </Section>
@@ -135,25 +136,24 @@ export default function Profile() {
   );
 }
 
-// Helper component for consistent section styling
-const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+const Section: React.FC<{ title: string; children: React.ReactNode }> = React.memo(({ title, children }) => (
   <View style={styles.section}>
     <Text style={styles.sectionTitle}>{title}</Text>
     {children}
   </View>
-);
+));
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background.primary },
   container: { flex: 1, backgroundColor: colors.background.primary },
-  contentContainer: { padding: spacing.lg, paddingBottom: spacing.xl }, // Add bottom padding
+  contentContainer: { padding: spacing.lg, paddingBottom: spacing.xl },
   profileHeader: { alignItems: 'center', marginVertical: spacing.xl },
   avatarContainer: {
     width: 80, height: 80, borderRadius: 40, backgroundColor: colors.primary,
     justifyContent: 'center', alignItems: 'center', marginBottom: spacing.md,
     ...layout.shadows.small,
   },
-  avatarText: { fontSize: 32, color: colors.text.inverse, fontFamily: 'Inter-Bold' }, // Ensure font is loaded
+  avatarText: { fontSize: 32, color: colors.text.inverse, fontFamily: 'Inter-Bold' },
   userName: { ...typography.heading2, marginBottom: spacing.xs, color: colors.text.primary },
   userEmail: { ...typography.body1, color: colors.text.secondary },
   section: { marginBottom: spacing.xl },
@@ -168,6 +168,7 @@ const styles = StyleSheet.create({
       padding: spacing.md,
       borderRadius: layout.borderRadius.md,
       marginBottom: spacing.lg,
+      marginHorizontal: spacing.lg,
   },
   inlineErrorText: {
       ...typography.body2,

@@ -1,92 +1,133 @@
-import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { colors, spacing, typography } from '@/constants/styles';
+import React, { useCallback, useEffect, useRef } from 'react';
+import {
+    Animated,
+    LayoutChangeEvent,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
 
 interface ToggleProps {
-  options: string[];
-  selectedIndex: number;
-  onChange: (index: number) => void;
+  options: [string, string];
+  selectedIndex: 0 | 1;
+  onChange: (index: 0 | 1) => void;
   disabled?: boolean;
-  testID?: string;
 }
 
-export const Toggle: React.FC<ToggleProps> = ({
-  options,
-  selectedIndex,
-  onChange,
-  disabled = false,
-  testID,
-}) => {
-  return (
-    <View 
-      style={[styles.container, disabled && styles.disabled]} 
-      testID={testID}
-    >
-      {options.map((option, index) => (
-        <TouchableOpacity
-          key={index}
-          style={[
-            styles.option,
-            selectedIndex === index && styles.selectedOption,
-          ]}
-          onPress={() => onChange(index)}
-          disabled={disabled}
-          activeOpacity={0.7}
-          accessibilityRole="radio"
-          accessibilityState={{ selected: selectedIndex === index, disabled }}
-        >
-          <Text 
+export const Toggle: React.FC<ToggleProps> = React.memo(
+  ({
+    options,
+    selectedIndex,
+    onChange,
+    disabled = false,
+  }: ToggleProps) => {
+    const [containerWidth, setContainerWidth] = React.useState(0);
+    const sliderWidth = containerWidth / 2 - spacing.xs;
+    const slideAnim = useRef(new Animated.Value(selectedIndex)).current;
+
+    useEffect(() => {
+      Animated.spring(slideAnim, {
+        toValue: selectedIndex,
+        useNativeDriver: true,
+        bounciness: 8,
+        speed: 14,
+      }).start();
+    }, [selectedIndex, slideAnim]);
+
+    const handleLayout = useCallback((event: LayoutChangeEvent) => {
+      setContainerWidth(event.nativeEvent.layout.width);
+    }, []);
+
+    const handlePress = useCallback((index: 0 | 1) => {
+      if (!disabled && index !== selectedIndex) {
+          onChange(index);
+      }
+    }, [disabled, selectedIndex, onChange]);
+
+    const translateX = slideAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [spacing.xs, sliderWidth + spacing.xs * 2],
+    });
+
+    return (
+      <View
+        style={[styles.container, disabled && styles.disabledContainer]}
+        onLayout={handleLayout}
+      >
+        {containerWidth > 0 && (
+          <Animated.View
             style={[
-              styles.optionText,
-              selectedIndex === index && styles.selectedOptionText,
-              disabled && styles.disabledText,
+              styles.slider,
+              { width: sliderWidth, transform: [{ translateX }] },
             ]}
-            numberOfLines={1}
+          />
+        )}
+        {options.map((option, index) => (
+          <TouchableOpacity
+            key={option}
+            style={styles.optionButton}
+            onPress={() => handlePress(index as 0 | 1)}
+            disabled={disabled}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={option}
+            accessibilityState={{ selected: selectedIndex === index, disabled: disabled }}
           >
-            {option}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-};
+            <Text
+              style={[
+                styles.optionText,
+                selectedIndex === index && styles.selectedOptionText,
+                disabled && styles.disabledText
+              ]}
+            >
+              {option}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  }
+);
 
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 8,
-    padding: 4,
-  },
-  disabled: {
-    opacity: 0.5,
-  },
-  option: {
-    flex: 1,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
+    backgroundColor: colors.background.surface,
+    borderRadius: 20,
+    padding: spacing.xs,
+    height: 40,
     alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 6,
+    position: 'relative',
+    minWidth: 160,
   },
-  selectedOption: {
-    backgroundColor: '#ffffff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 1,
-    elevation: 1,
+  disabledContainer: {
+     opacity: 0.6,
+  },
+  slider: {
+    position: 'absolute',
+    height: '100%',
+    backgroundColor: colors.primary,
+    borderRadius: 16,
+    top: spacing.xs,
+    left: 0,
+  },
+  optionButton: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: '100%',
+    zIndex: 1,
   },
   optionText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#64748b',
-    textAlign: 'center',
+    ...typography.label1,
+    color: colors.text.secondary,
   },
   selectedOptionText: {
-    color: '#0f172a',
-    fontWeight: '600',
+    color: colors.text.inverse,
   },
   disabledText: {
-    color: '#94a3b8',
+    color: colors.inactive,
   },
-}); 
+});

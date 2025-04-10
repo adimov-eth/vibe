@@ -18,7 +18,6 @@ export const Timer: React.FC<TimerProps> = ({
 
   useEffect(() => {
     if (isRunning) {
-      // Fade in and scale up when starting
       Animated.parallel([
         Animated.spring(fadeAnim, {
           toValue: 1,
@@ -32,7 +31,6 @@ export const Timer: React.FC<TimerProps> = ({
         }),
       ]).start();
     } else {
-      // Fade out and scale down when stopping
       Animated.parallel([
         Animated.spring(fadeAnim, {
           toValue: 0,

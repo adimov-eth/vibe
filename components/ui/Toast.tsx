@@ -1,10 +1,8 @@
-// app/components/ui/Toast.tsx
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import Toast, { BaseToast, BaseToastProps, ErrorToast, ToastConfig } from 'react-native-toast-message';
 
-// Configure toast appearance
 const toastConfig: ToastConfig = {
   success: (props: BaseToastProps) => (
     <BaseToast
@@ -68,7 +66,6 @@ const toastConfig: ToastConfig = {
   ),
 };
 
-// Helper functions to show toast messages from anywhere in the app
 export const showToast = {
   success: (title: string, message?: string) => {
     Toast.show({
@@ -108,7 +105,6 @@ export const showToast = {
   },
 };
 
-// Toast component to be added at the root of your app
 export const ToastProvider: React.FC = () => <Toast config={toastConfig} />;
 
 const styles = StyleSheet.create({

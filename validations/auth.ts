@@ -1,6 +1,5 @@
 import { z } from 'zod';
 
-// Common validation rules
 const emailSchema = z
   .string()
   .min(1, 'Email is required')
@@ -11,7 +10,6 @@ const passwordSchema = z
   .min(1, 'Password is required')
   .min(8, 'Password must be at least 8 characters');
 
-// Sign in form validation
 export const signInSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
@@ -19,7 +17,6 @@ export const signInSchema = z.object({
 
 export type SignInFormData = z.infer<typeof signInSchema>;
 
-// Sign up form validation
 export const signUpSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
@@ -31,7 +28,6 @@ export const signUpSchema = z.object({
 
 export type SignUpFormData = z.infer<typeof signUpSchema>;
 
-// Forgot password form validation
 export const forgotPasswordRequestSchema = z.object({
   email: emailSchema,
 });

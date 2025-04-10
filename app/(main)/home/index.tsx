@@ -1,69 +1,49 @@
 import { ModeCard } from '@/components/conversation/ModeCard';
 import { AppBar } from '@/components/layout/AppBar';
 import { Container } from '@/components/layout/Container';
-import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography } from '@/constants/styles';
-import { useUsage } from '@/hooks/useUsage';
+import { useUsage } from '@/hooks';
+import useStore from '@/state';
+import type { StoreState } from '@/state/types';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useShallow } from 'zustand/react/shallow';
 
-// Define the available conversation modes
-const CONVERSATION_MODES = [
-  {
-    id: 'mediator',
-    title: 'Mediator',
-    description: 'Get balanced insights',
-    color: '#58BD7D',
-  },
-  {
-    id: 'counselor',
-    title: "Who's Right",
-    description: 'Get a clear verdict',
-    color: '#3B71FE',
-  },
-  {
-    id: 'dinner',
-    title: 'Dinner Planner',
-    description: 'Decide what to eat',
-    color: '#4BC9F0',
-  },
-  {
-    id: 'movie',
-    title: 'Movie Night',
-    description: 'Find something to watch',
-    color: '#FF6838',
-  },
+interface Mode {
+  id: string;
+  title: string;
+  description: string;
+  color: string;
+}
+
+const CONVERSATION_MODES: Mode[] = [
+  { id: 'mediator', title: 'Mediator', description: 'Get balanced insights', color: '#58BD7D' },
+  { id: 'counselor', title: "Who's Right", description: 'Get a clear verdict', color: '#3B71FE' },
+  { id: 'dinner', title: 'Dinner Planner', description: 'Decide what to eat', color: '#4BC9F0' },
+  { id: 'movie', title: 'Movie Night', description: 'Find something to watch', color: '#FF6838' },
 ];
 
 export default function Home() {
   const router = useRouter();
-  const { 
-    usageStats,
-    loading,
-    error,
-    checkCanCreateConversation,
-    loadData
-  } = useUsage();
-  const initialLoadRef = useRef(false);
 
-  // Load usage stats on mount only once
-  useEffect(() => {
-    if (!initialLoadRef.current) {
-      initialLoadRef.current = true;
-      loadData();
-    }
-  }, [loadData]);
+  const { usageStats, subscriptionStatus } = useStore(
+    useShallow((state: StoreState) => ({
+      usageStats: state.usageStats,
+      subscriptionStatus: state.subscriptionStatus,
+    }))
+  );
 
-  // Navigate to mode details screen
-  const handleSelectMode = async (mode: typeof CONVERSATION_MODES[0]) => {
+  const usageHook = useUsage();
+  const { loading, error, checkCanCreateConversation, refreshUsageData } = usageHook;
+
+  const handleSelectMode = useCallback(async (mode: Mode) => {
     const canCreate = await checkCanCreateConversation();
     if (canCreate) {
-      router.push(`/recording/${mode.id}`);
+      router.push(`../recording/${mode.id}`);
     }
-  };
+  }, [checkCanCreateConversation, router]);
 
-  // Loading state
   if (loading && !usageStats) {
     return (
       <Container withSafeArea>
@@ -76,46 +56,50 @@ export default function Home() {
     );
   }
 
-  // Error state
-  if (error) {
+  if (error && !usageStats) {
     return (
       <Container withSafeArea>
         <AppBar title="VibeCheck" />
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{error.message || 'Failed to load subscription data'}</Text>
-          <Button 
-            title="Retry" 
-            variant="primary"
-            onPress={loadData}
-            style={styles.retryButton}
-          />
+          <View style={styles.retryButtonContainer}>
+            <Text style={styles.retryButton} onPress={refreshUsageData}>Retry</Text>
+          </View>
         </View>
       </Container>
     );
   }
 
+  const showInlineError = error && usageStats;
+
   return (
     <Container withSafeArea>
       <AppBar title="VibeCheck" />
-      
-      <ScrollView 
+
+      <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
           <RefreshControl
             refreshing={loading}
-            onRefresh={loadData}
+            onRefresh={refreshUsageData}
             colors={[colors.primary]}
+            tintColor={colors.primary}
           />
         }
       >
-        
+        {showInlineError && (
+           <View style={styles.inlineErrorContainer}>
+              <Text style={styles.inlineErrorText}>Could not refresh data: {error.message}</Text>
+           </View>
+        )}
+
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Choose a Mode</Text>
             <Text style={styles.sectionSubtitle}>Select the type of conversation you want to have</Text>
           </View>
-          
+
           <View style={styles.modesContainer}>
             {CONVERSATION_MODES.map((mode, index) => (
               <ModeCard
@@ -184,8 +168,24 @@ const styles = StyleSheet.create({
     color: colors.error,
     textAlign: 'center',
   },
-  retryButton: {
+  inlineErrorContainer: {
+    backgroundColor: colors.errorLight,
+    padding: spacing.md,
+    borderRadius: 8,
+    marginBottom: spacing.lg,
+    marginHorizontal: spacing.lg,
+  },
+  inlineErrorText: {
+      ...typography.body2,
+      color: colors.error,
+      textAlign: 'center',
+  },
+  retryButtonContainer: {
     marginTop: spacing.md,
-    minWidth: 120,
+  },
+  retryButton: {
+    ...typography.body1,
+    color: colors.primary,
+    textDecorationLine: 'underline',
   },
 });

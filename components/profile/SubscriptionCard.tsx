@@ -10,77 +10,77 @@ interface SubscriptionCardProps {
   onUpgradePress: () => void;
 }
 
-export const SubscriptionCard: React.FC<SubscriptionCardProps> = ({
-  subscriptionStatus,
-  usageStats,
-  onUpgradePress,
-}) => {
-  const isSubscribed = subscriptionStatus?.isActive ?? false;
-  const subscriptionPlan = subscriptionStatus?.type ?? 'N/A';
-  const expiryDate = subscriptionStatus?.expiresDate;
-  const remainingConversations = usageStats?.remainingConversations ?? 0;
+export const SubscriptionCard: React.FC<SubscriptionCardProps> = React.memo(
+  ({
+    subscriptionStatus,
+    usageStats,
+    onUpgradePress,
+  }: SubscriptionCardProps) => {
+    const isActive = subscriptionStatus?.isActive ?? false;
+    const expiresDateMs = subscriptionStatus?.expiresDate;
+    const remainingConversations = usageStats?.remainingConversations ?? 0;
+    const resetDate = usageStats?.resetDate;
 
-  const getFormattedDate = (timestamp: number | null | undefined) => {
-    if (!timestamp) return 'Unknown';
-    const date = new Date(timestamp);
-    if (date < new Date() && isSubscribed) return 'Expired'; // Show expired only if was subscribed
-    return date.toLocaleDateString(undefined, {
-      year: 'numeric', month: 'long', day: 'numeric'
-    });
-  };
+    const getFormattedDate = (timestamp: number | null | undefined) => {
+      if (!timestamp) return 'Unknown';
+      const date = new Date(timestamp);
+      if (date < new Date() && isActive)
+        return 'Expired';
+      return date.toLocaleDateString(undefined, {
+        year: 'numeric', month: 'long', day: 'numeric'
+      });
+    };
 
-  const getUsageText = () => {
-    if (!usageStats) return 'Loading usage...';
-    if (isSubscribed) return `Plan: ${subscriptionPlan === 'monthly' ? 'Monthly' : 'Yearly'}`; // Show plan type for subscribers
+    const getUsageText = () => {
+      if (!usageStats) return 'Loading usage...';
+      if (isActive)
+        return `Plan: ${subscriptionStatus?.type === 'monthly' ? 'Monthly' : 'Yearly'}`;
 
-    // Free user usage display
-    if (remainingConversations > 0) {
-       return `${remainingConversations} conversation${remainingConversations === 1 ? '' : 's'} left`;
-    } else {
-       return 'No free conversations left';
-    }
-  };
+      if (remainingConversations > 0) {
+         return `${remainingConversations} conversation${remainingConversations === 1 ? '' : 's'} left`;
+      } else {
+         return 'No free conversations left';
+      }
+    };
 
-  const getExpiryOrResetText = () => {
-       if (isSubscribed) {
-           return `Renews on ${getFormattedDate(expiryDate)}`;
-       } else if (remainingConversations <= 0) {
-            // Show reset date only if free conversations are used up
-            const resetDate = usageStats?.resetDate;
-            return `Resets on ${getFormattedDate(resetDate)}`;
-       }
-       return null; // Don't show reset date if free convos remain
-  };
+    const getExpiryOrResetText = () => {
+         if (isActive) {
+             return `Renews on ${getFormattedDate(expiresDateMs)}`;
+         } else if (remainingConversations <= 0) {
+              return `Resets on ${getFormattedDate(resetDate)}`;
+         }
+         return null;
+    };
 
+    return (
+      <View style={styles.card}>
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>Status</Text>
+          <Text style={[styles.value, isActive ? styles.statusPremium : styles.statusFree]}>
+            {isActive ? 'Premium' : 'Free'}
+          </Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>{isActive ? 'Plan / Usage' : 'Usage'}</Text>
+          <Text style={styles.value}>{getUsageText()}</Text>
+           {getExpiryOrResetText() && (
+               <Text style={styles.detailText}>{getExpiryOrResetText()}</Text>
+           )}
+        </View>
 
-  return (
-    <View style={styles.card}>
-      <View style={styles.infoRow}>
-        <Text style={styles.label}>Status</Text>
-        <Text style={[styles.value, isSubscribed ? styles.statusPremium : styles.statusFree]}>
-          {isSubscribed ? 'Premium' : 'Free'}
-        </Text>
+        {!isActive && (
+          <Button
+            title="Upgrade to Premium"
+            onPress={onUpgradePress}
+            variant="outline"
+            leftIcon="star-outline"
+            style={styles.upgradeButton}
+          />
+        )}
       </View>
-      <View style={styles.infoRow}>
-        <Text style={styles.label}>{isSubscribed ? 'Plan / Usage' : 'Usage'}</Text>
-        <Text style={styles.value}>{getUsageText()}</Text>
-         {getExpiryOrResetText() && (
-             <Text style={styles.detailText}>{getExpiryOrResetText()}</Text>
-         )}
-      </View>
-
-      {!isSubscribed && (
-        <Button
-          title="Upgrade to Premium"
-          onPress={onUpgradePress}
-          variant="outline"
-          leftIcon="star-outline"
-          style={styles.upgradeButton}
-        />
-      )}
-    </View>
-  );
-};
+    );
+  }
+);
 
 const styles = StyleSheet.create({
   card: {

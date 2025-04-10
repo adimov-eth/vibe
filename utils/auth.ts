@@ -1,6 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
 
-// Define constants for SecureStore keys
 const IDENTITY_TOKEN_KEY = 'auth_identity_token';
 const SESSION_TOKEN_KEY = 'auth_session_token';
 const USER_ID_KEY = 'auth_user_id';
@@ -27,26 +26,20 @@ export async function storeAuthTokens(tokens: AuthTokens): Promise<void> {
   if (tokens.sessionToken) {
     tasks.push(SecureStore.setItemAsync(SESSION_TOKEN_KEY, tokens.sessionToken));
   } else {
-    // Ensure old session token is removed if not provided
     tasks.push(SecureStore.deleteItemAsync(SESSION_TOKEN_KEY));
   }
 
   if (tokens.email) {
     tasks.push(SecureStore.setItemAsync(USER_EMAIL_KEY, tokens.email));
-  } else {
-    tasks.push(SecureStore.deleteItemAsync(USER_EMAIL_KEY));
   }
 
   if (tokens.fullName) {
     tasks.push(SecureStore.setItemAsync(USER_FULLNAME_KEY, JSON.stringify(tokens.fullName)));
-  } else {
-    tasks.push(SecureStore.deleteItemAsync(USER_FULLNAME_KEY));
   }
 
   try {
     await Promise.all(tasks);
   } catch (error) {
-    console.error('Failed to store auth tokens:', error);
     throw new Error('Failed to store authentication data');
   }
 }
@@ -66,8 +59,6 @@ export async function getAuthTokens(): Promise<Partial<AuthTokens>> {
       try {
         fullName = JSON.parse(fullNameStr);
       } catch (e) {
-        console.error('Failed to parse stored full name:', e);
-        // Optionally clear the invalid data
         await SecureStore.deleteItemAsync(USER_FULLNAME_KEY);
       }
     }
@@ -80,7 +71,6 @@ export async function getAuthTokens(): Promise<Partial<AuthTokens>> {
       fullName,
     };
   } catch (error) {
-    console.error('Failed to retrieve auth tokens:', error);
     throw new Error('Failed to retrieve authentication data');
   }
 }
@@ -95,7 +85,6 @@ export async function clearAuthTokens(): Promise<void> {
       SecureStore.deleteItemAsync(USER_FULLNAME_KEY),
     ]);
   } catch (error) {
-    console.error('Failed to clear auth tokens:', error);
     throw new Error('Failed to clear authentication data');
   }
 }
@@ -103,11 +92,9 @@ export async function clearAuthTokens(): Promise<void> {
 export async function getAuthorizationHeader(): Promise<string | null> {
   try {
     const tokens = await getAuthTokens();
-    // Prefer session token over identity token for API calls if available
     const token = tokens.sessionToken || tokens.identityToken;
     return token ? `Bearer ${token}` : null;
   } catch (error) {
-    console.error('Failed to get authorization header:', error);
     return null;
   }
 } 

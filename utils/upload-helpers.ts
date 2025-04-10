@@ -12,15 +12,12 @@ export interface UploadOptions {
 
 export interface UploadFileResult {
    success: boolean;
-   url?: string; // URL if successful
-   error?: string; // Error message if failed
-   statusCode?: number; // HTTP status code
+   url?: string
+   error?: string
+   statusCode?: number
 }
 
 
-/**
- * Performs a foreground file upload using Expo FileSystem.
- */
 export const uploadFile = async ({
     audioUri,
     conversationId,
@@ -45,8 +42,7 @@ export const uploadFile = async ({
             },
             (progress) => {
                 if (progress.totalBytesExpectedToSend > 0) {
-                    const percentComplete = Math.round( // Round progress
-                        (progress.totalBytesSent / progress.totalBytesExpectedToSend) * 100
+                    const percentComplete = Math.round( (progress.totalBytesSent / progress.totalBytesExpectedToSend) * 100
                     );
                     onProgress(percentComplete);
                 }
@@ -67,7 +63,6 @@ export const uploadFile = async ({
             };
         }
     } catch (error) {
-        console.error(`Foreground upload failed for ${conversationId}_${audioKey}:`, error);
         return {
             success: false,
             error: error instanceof Error ? error.message : String(error),

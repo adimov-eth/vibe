@@ -2,12 +2,9 @@ import { Dimensions } from 'react-native';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-// Function to calculate responsive sizes
 const scale = (size: number): number => (screenWidth / 375) * size;
 
-// Color system
 export const colors = {
-  // Brand colors
   primary: '#5B86E5',
   primaryLight: '#EEF4FF',
   primaryDark: '#1D4ED8',
@@ -18,7 +15,6 @@ export const colors = {
   accentLight: '#FFF1EC',
   accentDark: '#C2410C',
 
-  // Semantic colors
   success: '#4CAF50',
   successLight: '#DCFCE7',
   error: '#F44336',
@@ -28,7 +24,6 @@ export const colors = {
   info: '#2196F3',
   infoLight: '#DBEAFE',
 
-  // Text colors
   text: {
     primary: '#333333',
     secondary: '#666666',
@@ -36,7 +31,6 @@ export const colors = {
     inverse: '#FFFFFF'
   },
 
-  // Background colors
   background: {
     primary: '#FFFFFF',
     secondary: '#F5F5F5',
@@ -45,18 +39,14 @@ export const colors = {
     overlay: 'rgba(0, 0, 0, 0.5)',
   },
 
-  // Surface colors
   surface: '#FFFFFF',
   surfaceActive: '#F8FAFC',
 
-  // Border colors
   border: '#F0F0F0',
   borderActive: '#CBD5E1',
 
-  // Overlay colors
   overlay: 'rgba(15, 23, 42, 0.5)',
 
-  // Status colors
   active: '#22C55E',
   inactive: '#94A3B8',
 
@@ -68,7 +58,6 @@ export const colors = {
   },
 } as const;
 
-// Typography system
 export const typography = {
   display1: {
     fontSize: 48,
@@ -147,7 +136,6 @@ export const typography = {
   },
 };
 
-// Layout system
 export const layout = {
   screen: {
     backgroundColor: colors.background.primary,
@@ -192,7 +180,6 @@ export const layout = {
   },
 };
 
-// Spacing system
 export const spacing = {
   xxs: 4,
   xs: 8,
@@ -206,7 +193,6 @@ export const spacing = {
   screenHeight,
 } as const;
 
-// Animation system
 export const animation = {
   durations: {
     fast: 200,

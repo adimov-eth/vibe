@@ -1,28 +1,23 @@
 import { useAuthentication } from "@/hooks/useAuthentication";
 import { Redirect, Stack } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React from "react";
 
 export default function MainLayout() {
   const { isAuthenticated, isLoading } = useAuthentication();
-  const [authStatus, setAuthStatus] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
+  
+  console.log('[MainLayout] Rendering - isLoading:', isLoading, 'isAuthenticated:', isAuthenticated);
 
-  useEffect(() => {
-    if (authStatus === 'loading' && !isLoading) {
-       if (isAuthenticated) {
-           setAuthStatus('authenticated');
-       } else {
-           setAuthStatus('unauthenticated');
-       }
-    }
-  }, [isLoading, isAuthenticated, authStatus]);
-
-  if (authStatus === 'loading') {
+  if (isLoading) {
+    console.log('[MainLayout] Returning null (isLoading=true)');
     return null;
   }
-  
-  if (authStatus === 'unauthenticated') {
+
+  if (!isAuthenticated) {
+    console.log('[MainLayout] Redirecting to /(auth)/authenticate (isAuthenticated=false)');
     return <Redirect href="/(auth)/authenticate" />;
   }
+  
+  console.log('[MainLayout] Rendering Stack');
 
   return (
     <Stack
