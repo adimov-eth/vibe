@@ -308,7 +308,10 @@ export const createWebSocketSlice: StateCreator<
 
     if (socket?.readyState === WebSocket.OPEN) {
       try {
-        const subscribeMessage = JSON.stringify({ type: 'subscribe', topic: topic });
+        const subscribeMessage = JSON.stringify({
+          type: 'subscribe',
+          payload: { topic: topic }
+        });
         socket.send(subscribeMessage);
       } catch (e) {}
     } else {
