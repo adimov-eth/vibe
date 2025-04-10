@@ -8,7 +8,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback } from 'react';
 import { StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
 
-// Define the Mode interface since we're using it locally
 interface Mode {
   id: string;
   title: string;
@@ -16,7 +15,6 @@ interface Mode {
   color: string;
 }
 
-// Mapping of mode IDs to their detailed descriptions
 const MODE_DESCRIPTIONS: Record<string, string> = {
   mediator: "Record both sides of a disagreement, and VibeCheck will provide a balanced perspective. Our AI will identify common ground and suggest compromises without taking sides.",
   counselor: "Record both sides of an argument, and VibeCheck will analyze who's right based on facts and reasoning. Get an objective third-party verdict without emotion or bias.",
@@ -30,11 +28,8 @@ export default function ModeDetails() {
   const router = useRouter();
   const { checkCanCreateConversation } = useUsage();
   
-  // Parse the params to get our mode data
   const modeId = typeof id === 'string' ? id : '';
   
-  // Alternatively, we might have a getModeById function in a utils file or a modes store
-  // But for simplicity, recreate from available data
   const mode: Mode = {
     id: modeId,
     title: getModeTitle(modeId),
@@ -93,8 +88,6 @@ export default function ModeDetails() {
   );
 }
 
-// Helper functions to get mode details based on ID
-// In a real app, this data would likely come from a central store or API
 function getModeTitle(modeId: string): string {
   const modeTitles: Record<string, string> = {
     mediator: 'Mediator',

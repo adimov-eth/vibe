@@ -1,4 +1,3 @@
-// /app/(main)/recording/[id].tsx
 import { ModeCard } from '@/components/conversation/ModeCard';
 import { AppBar } from '@/components/layout/AppBar';
 import { Container } from '@/components/layout/Container';
@@ -7,11 +6,12 @@ import { RecordButton } from '@/components/recording/RecordButton';
 import { Toggle } from '@/components/ui/Toggle';
 import { colors, spacing, typography } from '@/constants/styles';
 import { useRecordingFlow } from '@/hooks';
-import useStore from '@/state'; // Import useStore
-// Import PendingUpload type
+import useStore from '@/state';
+import type { StoreState } from '@/state/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import debounce from 'lodash.debounce';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 interface Mode {
@@ -21,18 +21,23 @@ interface Mode {
   color: string;
 }
 
-export default function Recording() {
-  console.log("[RecordingScreen] Component rendering...");
-  const { id: modeParam } = useLocalSearchParams(); // Rename to avoid clash
-  const router = useRouter();
-  const store = useStore();
+const getModeDetails = (id: string): Mode => {
+  const modes: Record<string, Mode> = {
+    mediator: { id: 'mediator', title: 'Mediator', description: 'Get balanced insights', color: '#58BD7D' },
+    counselor: { id: 'counselor', title: "Who's Right", description: 'Get a clear verdict', color: '#3B71FE' },
+    dinner: { id: 'dinner', title: 'Dinner Planner', description: 'Decide what to eat', color: '#4BC9F0' },
+    movie: { id: 'movie', title: 'Movie Night', description: 'Find something to watch', color: '#FF6838' },
+  };
+  return modes[id] || { id, title: 'Recording', description: 'Record your conversation', color: '#3B71FE' };
+};
 
-  // Local UI state
+const RecordingScreen = React.memo(() => {
+  const { id: modeParam } = useLocalSearchParams();
+  const router = useRouter();
+
   const modeId = typeof modeParam === 'string' ? modeParam : '';
   const [mode, setMode] = useState<Mode>(() => getModeDetails(modeId));
-  // const [isWaitingForUpload, setIsWaitingForUpload] = useState(false); // <-- REMOVED
 
-  // Recording flow hook
   const {
     localId,
     recordMode,
@@ -40,57 +45,46 @@ export default function Recording() {
     isRecording,
     isProcessing,
     isButtonDisabled,
+    hasRecordingFinishedLastStep,
     handleToggleMode,
     handleToggleRecording,
     error: recordingError,
     cleanup,
   } = useRecordingFlow({ modeId });
 
-  // Get serverId mapping - needed for navigation target
-  const serverId = useStore(useCallback(state => state.localToServerIds[localId], [localId]));
-  // const uploadResults = useStore(state => state.uploadResults); // <-- REMOVED (monitoring moves to Results screen)
+  const serverId = useStore(
+    useCallback((state: StoreState) => state.localToServerIds[localId], [localId])
+  );
 
-  // Effect to navigate when processing is done (after last step) AND serverId is known
-  useEffect(() => {
-    // Determine if it *was* the last recording step that finished
-    const wasLastStep = recordMode === 'live' || (recordMode === 'separate' && currentPartner === 1); // Partner is 1 *after* P2 finishes
-    
-    // Navigate only if processing finished, serverId exists, and it was the last step
-    if (!isProcessing && serverId && wasLastStep) {
-      console.log(`[RecordingScreen] Processing finished, serverId ${serverId} known. Navigating to results...`);
-      // Replace ensures user can't navigate back to the recording screen after completion
-      router.replace(`../results/${serverId}`);
-    } else if (isProcessing && serverId && wasLastStep) {
-        console.log(`[RecordingScreen] Last step recorded, processing/uploading. Waiting for completion. ServerID: ${serverId}`);
-        // Stay on this screen, show processing indicator. Navigation will occur once isProcessing becomes false.
+  const debouncedToggleRecording = useMemo(
+    () => debounce(handleToggleRecording, 300, { leading: true, trailing: false }),
+    [handleToggleRecording]
+  );
+
+  const handleBackPress = useCallback(() => {
+    if (!isButtonDisabled && !isProcessing && router.canGoBack()) {
+       router.back();
     }
-  }, [isProcessing, serverId, recordMode, currentPartner, localId, router]);
+  }, [isButtonDisabled, isProcessing, router]);
 
-  // Removed the upload monitoring useEffect
+  useEffect(() => {
+    if (hasRecordingFinishedLastStep && serverId) {
+      router.replace(`../results/${serverId}`);
+    } else if (hasRecordingFinishedLastStep && !serverId) {}
+  }, [hasRecordingFinishedLastStep, serverId, localId, router]);
 
-
-  // Load mode details
   useEffect(() => {
     setMode(getModeDetails(modeId));
   }, [modeId]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      console.log("[RecordingScreen] Component unmounting. Running cleanup.");
-      // Cleanup might still involve canceling uploads if the hook manages that,
-      // but primarily handles recorder state and local temp files.
       void cleanup();
     };
   }, [cleanup]);
 
-  // Determine overall error state
   const displayError = recordingError;
-
-  // Show processing indicator if the hook reports processing
-  const showProcessingIndicator = isProcessing;
-
-  // Button is disabled if hook reports disabled OR if actively processing
+  const showProcessingIndicator = isProcessing || (hasRecordingFinishedLastStep && !serverId);
   const isGloballyDisabled = isButtonDisabled || showProcessingIndicator;
 
   return (
@@ -98,11 +92,10 @@ export default function Recording() {
       <AppBar
         title={mode.title}
         showBackButton
-        // Disable back button while processing
-        onBackPress={() => !isGloballyDisabled && router.back()}
+        onBackPress={handleBackPress}
       />
       <View style={styles.content}>
-        {/* Mode Card */}
+        {}
         <View style={styles.modeCardContainer}>
           <ModeCard
             id={mode.id}
@@ -110,26 +103,25 @@ export default function Recording() {
             title={mode.title}
             description={mode.description}
             color={mode.color}
-            onPress={() => {}} // Non-interactive
+            onPress={() => {}}
           />
         </View>
 
         <View style={styles.divider} />
 
-        {/* Recording Controls */}
+        {}
         <View style={styles.controlsContainer}>
           <Text style={styles.modeLabelText}>Recording Mode</Text>
           <Toggle
             options={['Separate', 'Live']}
             selectedIndex={recordMode === 'separate' ? 0 : 1}
             onChange={handleToggleMode}
-            // Disable toggle during recording or processing
             disabled={isRecording || isGloballyDisabled}
           />
         </View>
 
-        {/* Partner Indicator for Separate Mode */}
-        {recordMode === 'separate' && !showProcessingIndicator && ( // Hide during processing
+        {}
+        {recordMode === 'separate' && !showProcessingIndicator && (
           <View style={styles.partnerContainer}>
             <Text style={styles.partnerText}>Partner {currentPartner}</Text>
             {currentPartner === 2 && (
@@ -141,21 +133,22 @@ export default function Recording() {
           </View>
         )}
 
-        {/* Recording Button and Status */}
+        {}
         <View style={styles.recordingContainer}>
           {showProcessingIndicator ? (
             <View style={styles.processingContainer}>
                <ActivityIndicator size="large" color={colors.primary} />
                <Text style={styles.processingText}>
-                 {/* Adjust text based on recording state */} 
-                 {isRecording ? 'Processing stop...' : (serverId ? 'Finishing up...' : 'Processing...')}
+                  {isProcessing && isRecording ? 'Stopping recording...' :
+                   hasRecordingFinishedLastStep && !serverId ? 'Finalizing...' :
+                   'Processing...'}
                </Text>
             </View>
           ) : (
             <>
               <RecordButton
                 isRecording={isRecording}
-                onPress={handleToggleRecording}
+                onPress={debouncedToggleRecording}
                 disabled={isGloballyDisabled}
               />
               <Text style={styles.recordingInstructions}>
@@ -170,8 +163,8 @@ export default function Recording() {
           )}
         </View>
 
-        {/* Waveform Visualization */}
-        {!showProcessingIndicator && ( // Hide waveform during processing
+        {}
+        {!showProcessingIndicator && (
             <View style={styles.waveformContainer}>
               <AudioWaveform isActive={isRecording} />
             </View>
@@ -179,18 +172,9 @@ export default function Recording() {
       </View>
     </Container>
   );
-}
+});
 
-// Helper function for mode details (replace with store/API in production)
-function getModeDetails(id: string): Mode {
-  const modes: Record<string, Mode> = {
-    mediator: { id: 'mediator', title: 'Mediator', description: 'Get balanced insights', color: '#58BD7D' },
-    counselor: { id: 'counselor', title: "Who's Right", description: 'Get a clear verdict', color: '#3B71FE' },
-    dinner: { id: 'dinner', title: 'Dinner Planner', description: 'Decide what to eat', color: '#4BC9F0' },
-    movie: { id: 'movie', title: 'Movie Night', description: 'Find something to watch', color: '#FF6838' },
-  };
-  return modes[id] || { id, title: 'Recording', description: 'Record your conversation', color: '#3B71FE' };
-}
+export default RecordingScreen;
 
 const styles = StyleSheet.create({
   content: { flex: 1, padding: spacing.lg },

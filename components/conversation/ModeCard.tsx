@@ -2,7 +2,7 @@ import React from 'react';
 import { Dimensions, StyleProp, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
 
 const { width } = Dimensions.get('window');
-const cardIconSize = width * 0.12; // Responsive icon size
+const cardIconSize = width * 0.12;
 
 interface ModeIconProps {
   mode: string;
@@ -42,39 +42,43 @@ interface ModeCardProps {
   style?: StyleProp<ViewStyle>;
 }
 
-export const ModeCard: React.FC<ModeCardProps> = ({
-  id,
-  mode,
-  title,
-  description,
-  color,
-  isSelected = false,
-  onPress,
-  testID,
-  style,
-}) => {
-  return (
-    <TouchableOpacity
-      onPress={() => onPress(id)}
-      activeOpacity={0.7}
-      accessibilityLabel={`${title}. ${description}`}
-      accessibilityRole="button"
-      accessibilityState={{ selected: isSelected }}
-      testID={testID}
-      style={[styles.card, isSelected && styles.activeCard, style]}
-    >
-      <ModeIcon mode={mode} color={color} />
-      <View style={styles.content}>
-        <Text style={styles.title} numberOfLines={1}>
-          {title}
-        </Text>
-        <Text style={styles.description} numberOfLines={2}>
-          {description}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
-};
+export const ModeCard: React.FC<ModeCardProps> = React.memo(
+  ({
+    id,
+    mode,
+    title,
+    description,
+    color,
+    isSelected = false,
+    onPress,
+    testID,
+    style,
+  }: ModeCardProps) => {
+    const handlePress = () => onPress(id);
+
+    return (
+      <TouchableOpacity
+        onPress={handlePress}
+        activeOpacity={0.7}
+        accessibilityLabel={`${title}. ${description}`}
+        accessibilityRole="button"
+        accessibilityState={{ selected: isSelected }}
+        testID={testID}
+        style={[styles.card, isSelected && styles.activeCard, style]}
+      >
+        <ModeIcon mode={mode} color={color} />
+        <View style={styles.content}>
+          <Text style={styles.title} numberOfLines={1}>
+            {title}
+          </Text>
+          <Text style={styles.description} numberOfLines={2}>
+            {description}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    );
+  }
+);
 
 const styles = StyleSheet.create({
   card: {

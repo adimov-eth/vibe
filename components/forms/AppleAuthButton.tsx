@@ -46,7 +46,6 @@ export const AppleAuthButton = ({
       });
 
       if (credential.identityToken) {
-        // Pass the identity token and user data to the parent component
         onSuccess(
           credential.identityToken,
           {
@@ -59,11 +58,7 @@ export const AppleAuthButton = ({
         onError(new Error('No identity token received from Apple'));
       }
     } catch (e: any) {
-      if (e.code === 'ERR_REQUEST_CANCELED') {
-        // User canceled the sign-in flow
-        console.log('Sign in was canceled');
-      } else {
-        // Handle other errors
+      if (e.code === 'ERR_REQUEST_CANCELED') {} else {
         onError(e);
       }
     }
@@ -73,7 +68,6 @@ export const AppleAuthButton = ({
     return null;
   }
 
-  // Determine button type from prop
   let buttonType;
   switch(buttonText) {
     case 'CONTINUE':

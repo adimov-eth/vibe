@@ -33,11 +33,9 @@ export const Card: React.FC<CardProps> = ({
   onPress,
   testID,
 }) => {
-  // Animation value for press feedback
   const [pressAnim] = React.useState(() => new Animated.Value(0));
   const [hoverAnim] = React.useState(() => new Animated.Value(0));
 
-  // Get variant-specific styles
   const getVariantStyles = () => {
     const variants = {
       default: {
@@ -56,7 +54,6 @@ export const Card: React.FC<CardProps> = ({
     return variants[variant];
   };
 
-  // Handle press animations
   const handlePressIn = () => {
     Animated.spring(pressAnim, {
       toValue: 1,
@@ -73,7 +70,6 @@ export const Card: React.FC<CardProps> = ({
     }).start();
   };
 
-  // Handle hover animations (for web)
   const handleHoverIn = () => {
     Animated.spring(hoverAnim, {
       toValue: 1,

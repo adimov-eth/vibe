@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/Button';
 import { colors, layout, spacing, typography } from '@/constants/styles';
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 
 interface AppDataCardProps {
@@ -10,66 +10,84 @@ interface AppDataCardProps {
   showDevOptions?: boolean;
   currentUsage?: number;
   usageLimit?: number;
+  remainingConversations: number;
+  resetDate: number | undefined;
+  isSubscribed: boolean;
   onViewPaywallPress?: () => void;
 }
 
-export const AppDataCard: React.FC<AppDataCardProps> = ({
-  isClearingCache,
-  onClearCachePress,
-  clearCacheError,
-  showDevOptions = false,
-  currentUsage = 0,
-  usageLimit = 0,
-  onViewPaywallPress,
-}) => {
-  const handleClearCacheConfirm = () => {
-    Alert.alert(
-      'Clear Cache',
-      'Are you sure you want to clear all cached recordings and conversation data? This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Clear', style: 'destructive', onPress: onClearCachePress },
-      ],
-    );
-  };
+export const AppDataCard: React.FC<AppDataCardProps> = React.memo(
+  ({
+    isClearingCache,
+    onClearCachePress,
+    clearCacheError,
+    showDevOptions = false,
+    currentUsage = 0,
+    usageLimit = 0,
+    remainingConversations,
+    resetDate,
+    isSubscribed,
+    onViewPaywallPress,
+  }: AppDataCardProps) => {
+    const handleClearCacheConfirm = useCallback(() => {
+      Alert.alert(
+        'Clear Cache',
+        'Are you sure you want to clear all cached recordings and conversation data? This cannot be undone.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Clear',
+            style: 'destructive',
+            onPress: onClearCachePress,
+          },
+        ],
+      );
+    }, [onClearCachePress]);
 
-  return (
-    <View style={styles.card}>
-      <View style={styles.buttonContainer}>
-        <Text style={styles.buttonLabel}>Clear cached recordings & data</Text>
-        <Button
-          title="Clear Cache"
-          variant="outline"
-          size="small"
-          onPress={handleClearCacheConfirm}
-          leftIcon="trash-outline"
-          loading={isClearingCache}
-          disabled={isClearingCache}
-        />
+    return (
+      <View style={styles.card}>
+        <View style={styles.buttonContainer}>
+          <Text style={styles.buttonLabel}>Clear cached recordings & data</Text>
+          <Button
+            title="Clear Cache"
+            variant="outline"
+            size="small"
+            onPress={handleClearCacheConfirm}
+            leftIcon="trash-outline"
+            loading={isClearingCache}
+            disabled={isClearingCache}
+          />
+        </View>
+        {clearCacheError && (
+          <Text style={styles.errorText}>{clearCacheError}</Text>
+        )}
+
+        {showDevOptions && (
+          <>
+            <View style={[styles.devContainer, styles.buttonContainer]}>
+               <Text style={styles.buttonLabel}>Usage: {currentUsage}/{usageLimit}</Text>
+            </View>
+            <View style={styles.buttonContainer}>
+              <Text style={styles.buttonLabel}>Remaining Convos: {remainingConversations}</Text>
+            </View>
+            {onViewPaywallPress && (
+                <View style={[styles.devContainer, styles.buttonContainer]}>
+                  <Text style={styles.buttonLabel}>View paywall (DEV)</Text>
+                  <Button
+                    title="View"
+                    variant="outline"
+                    size="small"
+                    onPress={onViewPaywallPress}
+                    leftIcon="card-outline"
+                  />
+                </View>
+            )}
+          </>
+        )}
       </View>
-      {clearCacheError && (
-        <Text style={styles.errorText}>{clearCacheError}</Text>
-      )}
-
-      {showDevOptions && (
-        <>
-          <View style={[styles.devContainer, styles.buttonContainer]}>
-             <Text style={styles.buttonLabel}>Usage: {currentUsage}/{usageLimit}</Text>
-          </View>
-          {onViewPaywallPress && (
-              <View style={[styles.devContainer, styles.buttonContainer]}>
-                <Text style={styles.buttonLabel}>View paywall (DEV)</Text>
-                <Button
-                  title="View" variant="outline" size="small"
-                  onPress={onViewPaywallPress} leftIcon="card-outline"
-                />
-              </View>
-          )}
-        </>
-      )}
-    </View>
-  );
-};
+    );
+  }
+);
 
 const styles = StyleSheet.create({
   card: {
@@ -94,7 +112,7 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.error,
     marginTop: spacing.xs,
-    paddingLeft: spacing.sm, // Align roughly with label
+    paddingLeft: spacing.sm,
   },
   devContainer: {
     marginTop: spacing.md,

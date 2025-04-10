@@ -13,4 +13,4 @@ enableScreens();
 
 export default {
   initialized: true
-}; 
+};

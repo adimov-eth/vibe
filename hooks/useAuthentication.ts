@@ -1,6 +1,6 @@
 import { clearAuthTokens, getAuthTokens } from '@/utils/auth';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export interface AuthUser {
   id: string;
@@ -14,53 +14,74 @@ export function useAuthentication() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const initialCheckAttemptedRef = useRef(false);
 
-  // Check if user is authenticated
   const checkAuthStatus = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const tokens = await getAuthTokens();
+    let finalIsAuthenticated: boolean = false;
+    let finalUser: AuthUser | null = null;
 
+    try {
+      const tokens = await getAuthTokens();
       const hasAuth = !!tokens.identityToken && !!tokens.userId;
-      setIsAuthenticated(hasAuth);
+      finalIsAuthenticated = hasAuth;
 
       if (hasAuth && tokens.userId) {
-        setUser({
+        finalUser = {
           id: tokens.userId,
           firstName: tokens.fullName?.givenName ?? null,
           lastName: tokens.fullName?.familyName ?? null,
           email: tokens.email,
-        });
+        };
       } else {
-        setUser(null);
+        finalUser = null;
       }
     } catch (error) {
-      console.error('Error checking authentication status:', error);
-      setIsAuthenticated(false);
-      setUser(null);
+      finalIsAuthenticated = false;
+      finalUser = null;
     } finally {
-      setIsLoading(false);
+      const currentIsLoading = isLoading;
+      const currentIsAuthenticated = isAuthenticated;
+      const currentUserId = user?.id;
+
+      setUser(currentUser => {
+        if (JSON.stringify(currentUser) !== JSON.stringify(finalUser)) {
+          return finalUser;
+        }
+        return currentUser;
+      });
+      setIsAuthenticated(currentAuth => {
+        if (currentAuth !== finalIsAuthenticated) {
+          return finalIsAuthenticated;
+        }
+        return currentAuth;
+      });
+      setIsLoading(currentLoading => {
+        if (currentLoading) {
+          return false;
+        }
+        return currentLoading;
+      });
     }
   }, []);
 
-  // Sign out
   const signOut = useCallback(async () => {
     try {
       await clearAuthTokens();
-      setIsAuthenticated(false);
       setUser(null);
+      setIsAuthenticated(false);
+      setIsLoading(false);
 
-      // Navigate to the auth screen
       router.replace('/(auth)/authenticate');
     } catch (error) {
-      console.error('Error signing out:', error);
       throw new Error('Failed to sign out');
     }
   }, [router]);
 
-  // Initialize authentication check
   useEffect(() => {
-    checkAuthStatus();
+    if (!initialCheckAttemptedRef.current) {
+      initialCheckAttemptedRef.current = true;
+      checkAuthStatus();
+    } else {}
   }, [checkAuthStatus]);
 
   return {
@@ -70,4 +91,4 @@ export function useAuthentication() {
     signOut,
     refreshAuthStatus: checkAuthStatus
   };
-} 
+}

@@ -1,235 +1,177 @@
-import { animation, colors, layout, spacing, typography } from '@/constants/styles';
+import { colors, layout, spacing, typography } from '@/constants/styles';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import {
   ActivityIndicator,
-  Animated,
-  Pressable,
   StyleProp,
   StyleSheet,
   Text,
-  View,
-  ViewStyle
+  TouchableOpacity,
+  ViewStyle,
 } from 'react-native';
 
 interface ButtonProps {
   title: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'outline' | 'danger' | 'ghost';
+  variant?: 'primary' | 'secondary' | 'outline' | 'destructive';
   size?: 'small' | 'medium' | 'large';
-  loading?: boolean;
-  disabled?: boolean;
   leftIcon?: keyof typeof Ionicons.glyphMap;
   rightIcon?: keyof typeof Ionicons.glyphMap;
-  fullWidth?: boolean;
+  loading?: boolean;
+  disabled?: boolean;
   style?: StyleProp<ViewStyle>;
   testID?: string;
 }
 
-export const Button: React.FC<ButtonProps> = ({
-  title,
-  onPress,
-  variant = 'primary',
-  size = 'medium',
-  loading = false,
-  disabled = false,
-  leftIcon,
-  rightIcon,
-  fullWidth = false,
-  style,
-  testID,
-}) => {
-  // Animation value for press feedback
-  const [pressAnim] = React.useState(() => new Animated.Value(0));
+export const Button: React.FC<ButtonProps> = React.memo(
+  ({
+    title,
+    onPress,
+    variant = 'primary',
+    size = 'medium',
+    leftIcon,
+    rightIcon,
+    loading = false,
+    disabled = false,
+    style,
+    testID,
+  }: ButtonProps) => {
+    const isDisabled = disabled || loading;
 
-  // Get variant-specific styles
-  const getVariantStyles = () => {
-    const variants = {
-      primary: {
-        background: colors.primary,
-        text: colors.text.inverse,
-        border: 'transparent',
-        pressedBg: colors.primaryDark,
-      },
-      secondary: {
-        background: colors.secondary,
-        text: colors.text.inverse,
-        border: 'transparent',
-        pressedBg: colors.secondaryDark,
-      },
-      outline: {
-        background: 'transparent',
-        text: colors.primary,
-        border: colors.primary,
-        pressedBg: colors.background.secondary,
-      },
-      danger: {
-        background: colors.error,
-        text: colors.text.inverse,
-        border: 'transparent',
-        pressedBg: colors.errorLight,
-      },
-      ghost: {
-        background: 'transparent',
-        text: colors.text.secondary,
-        border: 'transparent',
-        pressedBg: colors.background.secondary,
-      },
-    };
-    return variants[variant];
-  };
+    const buttonStyles = [
+      styles.button,
+      styles[`${variant}Button`],
+      styles[`${size}Button`],
+      isDisabled && styles.disabledButton,
+      style,
+    ];
 
-  // Get size-specific styles
-  const getSizeStyles = () => {
-    const sizes = {
-      small: {
-        padding: spacing.sm,
-        text: {
-          ...typography.buttonSmall,
-          fontWeight: '600' as const,
-        },
-        iconSize: 16,
-      },
-      medium: {
-        padding: spacing.md,
-        text: {
-          ...typography.buttonMedium,
-          fontWeight: '600' as const,
-        },
-        iconSize: 20,
-      },
-      large: {
-        padding: spacing.lg,
-        text: {
-          ...typography.buttonLarge,
-          fontWeight: '600' as const,
-        },
-        iconSize: 24,
-      },
-    };
-    return sizes[size];
-  };
+    const textStyles = [
+      styles.text,
+      styles[`${variant}Text`],
+      styles[`${size}Text`],
+      isDisabled && styles.disabledText,
+    ];
 
-  const variantStyles = getVariantStyles();
-  const sizeStyles = getSizeStyles();
+    const iconColor = isDisabled
+      ? styles[`${variant}DisabledText`].color
+      : styles[`${variant}Text`].color;
 
-  // Handle press animations
-  const handlePressIn = () => {
-    Animated.spring(pressAnim, {
-      toValue: 1,
-      ...animation.springs.gentle,
-      useNativeDriver: true,
-    }).start();
-  };
+    const iconSize = size === 'small' ? 16 : size === 'large' ? 24 : 20;
 
-  const handlePressOut = () => {
-    Animated.spring(pressAnim, {
-      toValue: 0,
-      ...animation.springs.gentle,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const scale = pressAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 0.98],
-  });
-
-  return (
-    <Animated.View
-      style={[
-        { transform: [{ scale }] },
-        fullWidth && styles.fullWidth,
-        style,
-      ]}
-    >
-      <Pressable
-        testID={testID}
+    return (
+      <TouchableOpacity
+        style={buttonStyles}
         onPress={onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        disabled={disabled || loading}
-        style={({ pressed }) => [
-          styles.button,
-          {
-            backgroundColor: pressed ? variantStyles.pressedBg : variantStyles.background,
-            borderColor: variantStyles.border,
-            padding: sizeStyles.padding,
-            opacity: disabled ? 0.5 : 1,
-          },
-          layout.shadows.small,
-        ]}
+        disabled={isDisabled}
+        activeOpacity={0.7}
+        testID={testID}
         accessibilityRole="button"
-        accessibilityState={{ disabled: disabled || loading }}
+        accessibilityState={{ disabled: isDisabled }}
+        accessibilityLabel={title}
       >
-        <View style={styles.content}>
-          {loading ? (
-            <ActivityIndicator 
-              size="small" 
-              color={variantStyles.text}
-              style={styles.spinner} 
-            />
-          ) : (
-            <>
-              {leftIcon && (
-                <Ionicons 
-                  name={leftIcon} 
-                  size={sizeStyles.iconSize} 
-                  color={variantStyles.text} 
-                  style={styles.leftIcon} 
-                />
-              )}
-              <Text 
-                style={[
-                  sizeStyles.text,
-                  { color: variantStyles.text },
-                  styles.text,
-                ]}
-                numberOfLines={1}
-              >
-                {title}
-              </Text>
-              {rightIcon && (
-                <Ionicons 
-                  name={rightIcon} 
-                  size={sizeStyles.iconSize} 
-                  color={variantStyles.text} 
-                  style={styles.rightIcon} 
-                />
-              )}
-            </>
-          )}
-        </View>
-      </Pressable>
-    </Animated.View>
-  );
-};
+        {loading ? (
+          <ActivityIndicator size="small" color={iconColor} />
+        ) : (
+          <>
+            {leftIcon && (
+              <Ionicons
+                name={leftIcon}
+                size={iconSize}
+                color={iconColor}
+                style={styles.iconLeft}
+              />
+            )}
+            <Text style={textStyles}>{title}</Text>
+            {rightIcon && (
+              <Ionicons
+                name={rightIcon}
+                size={iconSize}
+                color={iconColor}
+                style={styles.iconRight}
+              />
+            )}
+          </>
+        )}
+      </TouchableOpacity>
+    );
+  }
+);
 
 const styles = StyleSheet.create({
-  fullWidth: {
-    width: '100%',
-  },
   button: {
-    borderRadius: layout.borderRadius.md,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  content: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: layout.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
   text: {
+    ...typography.label1,
     textAlign: 'center',
   },
-  leftIcon: {
-    marginRight: spacing.xs,
+  primaryButton: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
-  rightIcon: {
-    marginLeft: spacing.xs,
+  primaryText: {
+    color: colors.text.inverse,
   },
-  spinner: {
-    marginHorizontal: spacing.xs,
+  secondaryButton: {
+    backgroundColor: colors.background.secondary,
+    borderColor: colors.background.secondary,
   },
-}); 
+  secondaryText: {
+    color: colors.text.primary,
+  },
+  outlineButton: {
+    backgroundColor: 'transparent',
+    borderColor: colors.border,
+  },
+  outlineText: {
+    color: colors.text.primary,
+  },
+  destructiveButton: {
+    backgroundColor: colors.error,
+    borderColor: colors.error,
+  },
+  destructiveText: {
+    color: colors.text.inverse,
+  },
+  smallButton: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  smallText: {
+    ...typography.label2,
+  },
+  mediumButton: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  mediumText: {
+    ...typography.label1,
+  },
+  largeButton: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  largeText: {
+    ...typography.button1,
+  },
+  disabledButton: {
+    opacity: 0.6,
+  },
+  disabledText: {},
+  primaryDisabledText: { color: colors.text.inverse },
+  secondaryDisabledText: { color: colors.text.primary },
+  outlineDisabledText: { color: colors.text.primary },
+  destructiveDisabledText: { color: colors.text.inverse },
+  iconLeft: {
+    marginRight: spacing.sm,
+  },
+  iconRight: {
+    marginLeft: spacing.sm,
+  },
+});

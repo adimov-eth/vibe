@@ -21,7 +21,7 @@ interface UserInfo {
   };
 }
 
-export const AppBar: React.FC<AppBarProps> = ({ 
+export const AppBar: React.FC<AppBarProps> = React.memo(({ 
   title = "VibeCheck",
   showBackButton = false,
   onBackPress,
@@ -109,7 +109,7 @@ export const AppBar: React.FC<AppBarProps> = ({
       </View>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

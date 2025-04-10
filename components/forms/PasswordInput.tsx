@@ -80,7 +80,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
-    // Account for label height when present
     marginTop: 8,
   },
   toggleButton: {

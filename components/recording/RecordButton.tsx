@@ -18,65 +18,82 @@ interface RecordButtonProps {
   disabled?: boolean;
 }
 
-export function RecordButton({ isRecording, onPress, disabled = false }: RecordButtonProps) {
-  const scale = useSharedValue(1);
-  const glowOpacity = useSharedValue(0);
-  const glowScale = useSharedValue(1);
+export const RecordButton = React.memo(
+  ({ isRecording, onPress, disabled = false }: RecordButtonProps) => {
+    const scale = useSharedValue(1);
+    const glowOpacity = useSharedValue(0);
+    const glowScale = useSharedValue(1);
 
-  React.useEffect(() => {
-    if (isRecording || disabled) {
-      glowOpacity.value = withRepeat(
-        withTiming(0.5, { duration: 1000 }),
-        -1,
-        true
-      );
-      glowScale.value = withRepeat(
-        withTiming(1.3, { duration: 1000 }),
-        -1,
-        true
-      );
-    } else {
-      glowOpacity.value = withSpring(0);
-      glowScale.value = withSpring(1);
-    }
-  }, [isRecording, disabled]);
+    React.useEffect(() => {
+      if (isRecording && !disabled) {
+        glowOpacity.value = withRepeat(
+          withTiming(0.5, { duration: 1000 }),
+          -1,
+          true
+        );
+        glowScale.value = withRepeat(
+          withTiming(1.3, { duration: 1000 }),
+          -1,
+          true
+        );
+      } else {
+        glowOpacity.value = withTiming(0);
+        glowScale.value = withTiming(1);
+      }
+    }, [isRecording, disabled, glowOpacity, glowScale]);
 
-  const buttonStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
+    const buttonStyle = useAnimatedStyle(() => ({
+      transform: [{ scale: scale.value }],
+      opacity: disabled ? 0.6 : 1
+    }));
 
-  const glowStyle = useAnimatedStyle(() => ({
-    opacity: glowOpacity.value,
-    transform: [{ scale: glowScale.value }],
-  }));
+    const glowStyle = useAnimatedStyle(() => ({
+      opacity: glowOpacity.value,
+      transform: [{ scale: glowScale.value }],
+    }));
 
-  const handlePressIn = () => {
-    scale.value = withSpring(0.95);
-  };
+    const handlePressIn = React.useCallback(() => {
+      if (!disabled) {
+        scale.value = withSpring(0.95);
+      }
+    }, [disabled, scale]);
 
-  const handlePressOut = () => {
-    scale.value = withSpring(1);
-  };
+    const handlePressOut = React.useCallback(() => {
+      if (!disabled) {
+        scale.value = withSpring(1);
+      }
+    }, [disabled, scale]);
 
-  return (
-    <View style={styles.container}>
-      <ReanimatedView style={[styles.glow, glowStyle]} />
-      <Pressable
-        onPress={onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-      >
-        <ReanimatedView style={[styles.button, buttonStyle]}>
-          <Ionicons
-            name={isRecording ? 'stop' : 'mic'}
-            size={24}
-            color="white"
-          />
-        </ReanimatedView>
-      </Pressable>
-    </View>
-  );
-}
+    const handlePress = React.useCallback(() => {
+      if (!disabled) {
+        onPress();
+      }
+    }, [disabled, onPress]);
+
+    return (
+      <View style={styles.container}>
+        <ReanimatedView style={[styles.glow, glowStyle]} />
+        <Pressable
+          onPress={handlePress}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          disabled={disabled}
+          accessibilityRole="button"
+          accessibilityLabel={isRecording ? "Stop recording" : "Start recording"}
+          accessibilityState={{ disabled: disabled }}
+        >
+          <ReanimatedView style={[styles.button, buttonStyle]}>
+            <Ionicons
+              name={isRecording ? 'stop' : 'mic'}
+              size={24}
+              color="white"
+            />
+          </ReanimatedView>
+        </Pressable>
+      </View>
+    );
+  }
+);
 
 const styles = StyleSheet.create({
   container: {

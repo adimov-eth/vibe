@@ -9,7 +9,7 @@ import { SUBSCRIPTION_SKUS } from '@/state/slices/subscriptionSlice';
 import { Ionicons } from '@expo/vector-icons';
 import type { Ionicons as IoniconsType } from '@expo/vector-icons/build/Icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -42,7 +42,6 @@ export default function Paywall() {
     error: usageError,
   } = useUsage();
 
-  // Select yearly plan by default when products load
   useEffect(() => {
     if (subscriptionProducts.length > 0 && !selectedPlan) {
       const yearlyPlan = subscriptionProducts.find(
@@ -52,7 +51,6 @@ export default function Paywall() {
     }
   }, [subscriptionProducts, selectedPlan]);
 
-  // If user becomes subscribed after a purchase, show success
   useEffect(() => {
     if (isSubscribed && isPurchasing) {
       setPurchaseSuccess(true);
@@ -60,45 +58,47 @@ export default function Paywall() {
     }
   }, [isSubscribed, isPurchasing]);
 
-  const handlePurchase = async () => {
+  const handlePurchase = useCallback(async () => {
     if (!selectedPlan) return;
     
     setIsPurchasing(true);
     try {
-      // Get Android-specific offer token if available
       const product = Platform.OS === 'android' 
         ? subscriptionProducts.find(p => p.productId === selectedPlan) 
         : null;
       const offerToken = product?.subscriptionOfferDetails?.[0]?.offerToken;
       
-      // Attempt purchase
       await purchase(selectedPlan, offerToken);
     } catch (err) {
-      console.error('Purchase error:', err);
       setIsPurchasing(false);
     }
-  };
+  }, [selectedPlan, purchase, subscriptionProducts]);
 
-  const handleRestore = async () => {
+  const handleRestore = useCallback(async () => {
     setIsRestoring(true);
     try {
       await restore();
-    } catch (err) {
-      console.error('Restore error:', err);
-    } finally {
+    } catch (err) {} finally {
       setIsRestoring(false);
     }
-  };
+  }, [restore]);
 
-  const handleGoBack = () => {
+  const handleGoBack = useCallback(() => {
     if (router.canGoBack()) {
       router.back();
     } else {
       router.replace('/home');
     }
-  };
+  }, [router]);
 
-  // Success view shown after successful purchase
+  const handlePlanSelect = useCallback((productId: string) => {
+    setSelectedPlan(productId);
+  }, []);
+
+  const handleContinueToApp = useCallback(() => {
+    router.replace('/home');
+  }, [router]);
+
   if (purchaseSuccess) {
     return (
       <Container withSafeArea>
@@ -116,14 +116,13 @@ export default function Paywall() {
           <Button
             title="Continue to App"
             variant="primary"
-            onPress={() => router.replace('/home')}
+            onPress={handleContinueToApp}
           />
         </View>
       </Container>
     );
   }
 
-  // Loading state
   if (subscriptionLoading || usageLoading) {
     return (
       <Container withSafeArea>
@@ -140,13 +139,14 @@ export default function Paywall() {
     );
   }
 
-  // Error state
   if (subscriptionError || usageError) {
     const errorMessage = subscriptionError instanceof Error 
       ? subscriptionError.message 
       : usageError instanceof Error 
         ? usageError.message 
         : 'Failed to load subscription details';
+
+    const handleRetry = useCallback(() => router.replace('/paywall'), [router]);
 
     return (
       <Container withSafeArea>
@@ -161,15 +161,15 @@ export default function Paywall() {
           <Button
             title="Try Again"
             variant="primary"
-            onPress={() => router.replace('/paywall')}
+            onPress={handleRetry}
           />
         </View>
       </Container>
     );
   }
 
-  const renderFeatureItem = (iconName: keyof typeof IoniconsType.glyphMap, title: string, description: string) => (
-    <View style={localStyles.featureItem}>
+  const renderFeatureItem = useCallback((iconName: keyof typeof IoniconsType.glyphMap, title: string, description: string) => (
+    <View style={localStyles.featureItem} key={title}>
       <View style={localStyles.featureIcon}>
         <Ionicons name={iconName} size={24} color={colors.primary} />
       </View>
@@ -178,7 +178,7 @@ export default function Paywall() {
         <Text style={localStyles.featureDescription}>{description}</Text>
       </View>
     </View>
-  );
+  ), []);
 
   return (
     <Container withSafeArea>
@@ -187,9 +187,8 @@ export default function Paywall() {
         showBackButton
         onBackPress={handleGoBack}
       />
-      
       <ScrollView style={localStyles.scrollView}>
-        {/* Hero section */}
+        {}
         <View style={localStyles.heroSection}>
           <View style={localStyles.heroIconContainer}>
             <Ionicons name="star" size={80} color="#FFD700" />
@@ -200,7 +199,7 @@ export default function Paywall() {
           </Text>
         </View>
         
-        {/* Usage stats */}
+        {}
         <Card style={localStyles.usageCard}>
           <View style={localStyles.usageStatsContainer}>
             <View style={localStyles.usageStat}>
@@ -230,7 +229,7 @@ export default function Paywall() {
           </View>
         </Card>
         
-        {/* Features section */}
+        {}
         <View style={localStyles.featuresSection}>
           <Text style={localStyles.sectionTitle}>Premium Features</Text>
           
@@ -259,7 +258,7 @@ export default function Paywall() {
           )}
         </View>
         
-        {/* Plans section */}
+        {}
         <View style={localStyles.plansSection}>
           <Text style={localStyles.sectionTitle}>Choose Your Plan</Text>
           
@@ -273,7 +272,7 @@ export default function Paywall() {
                   localStyles.planCard,
                   selectedPlan === product.productId && localStyles.selectedPlan
                 ]}
-                onPress={() => setSelectedPlan(product.productId)}
+                onPress={() => handlePlanSelect(product.productId)}
               >
                 {product.productId === SUBSCRIPTION_SKUS.YEARLY && (
                   <View style={localStyles.bestValueBadge}>
@@ -305,7 +304,7 @@ export default function Paywall() {
           )}
         </View>
         
-        {/* Action buttons */}
+        {}
         <View style={localStyles.actionsContainer}>
           <Button
             title="Subscribe Now"

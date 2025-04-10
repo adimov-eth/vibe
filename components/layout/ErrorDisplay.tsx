@@ -1,4 +1,3 @@
-// components/ErrorDisplay.tsx
 import { showToast } from '@/components/ui/Toast';
 import useStore from '@/state';
 import { ErrorMessage } from '@/state/types';
@@ -15,7 +14,7 @@ const ErrorDisplay: React.FC = () => {
     }
   }, [latestError]);
 
-  return null; // No UI, just a listener
+  return null;
 };
 
 export default ErrorDisplay;

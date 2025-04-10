@@ -14,7 +14,7 @@ export interface Conversation {
 }
 
 export interface UploadProgress {
-  [key: string]: number; // uploadId = `${serverConversationId}_${audioKey}`
+  [key: string]: number
 }
 
 export interface PendingUpload {
@@ -33,11 +33,9 @@ export interface UploadResult {
   localConversationId?: string;
 }
 
-// Note: Backend API (GET /subscriptions/status) now provides expiresDate
-// consistently as milliseconds or null.
 export interface SubscriptionStatus {
   isActive: boolean;
-  expiresDate: number | null; // Expect milliseconds or null
+  expiresDate: number | null
   type: string | null;
   subscriptionId: number | null;
 }
@@ -84,13 +82,11 @@ export type WebSocketMessageType =
   | 'audio'
   | 'auth_success';
 
-// Base message interface with common fields
 export interface BaseWebSocketMessage {
   type: WebSocketMessageType;
   timestamp: string;
 }
 
-// Specialized message interfaces for better type safety
 export interface TranscriptMessage extends BaseWebSocketMessage {
   type: 'transcript';
   payload: {
@@ -163,24 +159,21 @@ export interface AuthSuccessMessage extends BaseWebSocketMessage {
   userId: string;
 }
 
-// Union type for all WebSocket messages
-export type WebSocketMessage = 
-  | TranscriptMessage
-  | AnalysisMessage
-  | ErrorMessage
-  | StatusMessage
-  | AudioMessage
-  | ConnectionMessage
-  | SubscriptionMessage
-  | PongMessage
-  | AuthSuccessMessage;
+export type WebSocketMessage = | TranscriptMessage
+| AnalysisMessage
+| ErrorMessage
+| StatusMessage
+| AudioMessage
+| ConnectionMessage
+| SubscriptionMessage
+| PongMessage
+| AuthSuccessMessage;
 
-// Added ConversationResult Type
 export interface ConversationResult {
   transcript?: string;
   analysis?: string;
   status: 'processing' | 'completed' | 'error';
-  error?: string | null; // Allow null
+  error?: string | null
   progress: number;
 }
 
@@ -191,9 +184,10 @@ export interface SubscriptionSlice {
   subscriptionLoading: boolean;
   subscriptionError: Error | null;
   verifySubscription: (receiptData: string) => Promise<SubscriptionResponse>;
-  checkSubscriptionStatus: () => Promise<SubscriptionResponse>;
-  getUsageStats: () => Promise<UsageResponse>;
-  initializeStore: () => Promise<void>;
+  checkSubscriptionStatus: (authToken?: string) => Promise<SubscriptionResponse>;
+  getUsageStats: (authToken?: string) => Promise<UsageResponse>;
+  isInitialized: boolean;
+  initializeAppState: () => Promise<void>;
   cleanupStore: () => void;
   purchaseSubscription: (productId: string, offerToken?: string) => Promise<void>;
   restorePurchases: () => Promise<void>;
