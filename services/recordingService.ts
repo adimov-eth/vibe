@@ -3,11 +3,15 @@ import * as FileSystem from 'expo-file-system';
 
 interface RecordingInstance {
   recording: Audio.Recording;
-  uri: string | null
+  uri: string | null;
 }
 
+// Single recording instance to ensure proper resource management
 let currentRecordingInstance: RecordingInstance | null = null;
 
+/**
+ * Check or request microphone permissions
+ */
 export const checkPermissions = async (): Promise<boolean> => {
   try {
     const { status: currentStatus } = await Audio.getPermissionsAsync();
@@ -16,11 +20,14 @@ export const checkPermissions = async (): Promise<boolean> => {
     }
     const { status: newStatus } = await Audio.requestPermissionsAsync();
     return newStatus === 'granted';
-  } catch (err) {
+  } catch {
     return false;
   }
 };
 
+/**
+ * Configure audio session for recording
+ */
 export const setupAudioMode = async (): Promise<void> => {
   try {
     await Audio.setAudioModeAsync({
@@ -37,6 +44,9 @@ export const setupAudioMode = async (): Promise<void> => {
   }
 };
 
+/**
+ * Reset audio session after recording
+ */
 export const cleanupAudioMode = async (): Promise<void> => {
   try {
     await Audio.setAudioModeAsync({
@@ -46,21 +56,34 @@ export const cleanupAudioMode = async (): Promise<void> => {
       shouldDuckAndroid: true,
       playThroughEarpieceAndroid: false,
     });
-  } catch (err) {}
+  } catch {
+    // Non-critical error - ignore
+  }
 };
 
+/**
+ * Start recording with proper initialization and error handling
+ */
 export const startRecording = async (): Promise<Audio.Recording> => {
+  // Clean up any existing recording first
   await cleanupCurrentRecording();
-
+  
+  // Verify permissions
   const hasPermission = await checkPermissions();
   if (!hasPermission) {
     throw new Error('Microphone permission denied');
   }
 
   let newRecording: Audio.Recording | null = null;
+  
   try {
+    // Ensure audio mode is properly configured
+    await setupAudioMode();
+    
+    // Create and prepare new recording
     newRecording = new Audio.Recording();
-    await newRecording.prepareToRecordAsync({ ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+    await newRecording.prepareToRecordAsync({
+      ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
       android: {
         ...Audio.RecordingOptionsPresets.HIGH_QUALITY.android,
         numberOfChannels: 1,
@@ -70,88 +93,122 @@ export const startRecording = async (): Promise<Audio.Recording> => {
         numberOfChannels: 1,
       }
     });
-    await newRecording.startAsync();
+    
+    // Start recording with timeout protection
+    const startPromise = newRecording.startAsync();
+    const timeoutPromise = new Promise<void>((_, reject) => {
+      const timeoutId = setTimeout(() => {
+        reject(new Error('Recording start timed out'));
+      }, 3000);
+      
+      // The timeout will be cleared when either promise resolves/rejects
+      startPromise.finally(() => clearTimeout(timeoutId));
+    });
+    
+    // Race between the actual operation and timeout
+    await Promise.race([startPromise, timeoutPromise]);
+    
+    // If successful, store the instance and return
     currentRecordingInstance = { recording: newRecording, uri: null };
     return newRecording;
   } catch (err) {
+    // Clean up on error
     if (newRecording) {
-        try {
-          await newRecording.stopAndUnloadAsync();
-        } catch (cleanupError) {}
+      try {
+        await cleanupSpecificInstance(newRecording);
+      } catch {
+        // Ignore cleanup errors
+      }
     }
+    
     currentRecordingInstance = null;
     throw new Error(`Failed to start recording: ${err instanceof Error ? err.message : String(err)}`);
   }
 };
 
+/**
+ * Stop the current recording and return the file URI
+ */
 export const stopRecording = async (): Promise<string | null> => {
   const instanceToStop = currentRecordingInstance;
-
   if (!instanceToStop) {
     return null;
   }
 
   const { recording } = instanceToStop;
+  currentRecordingInstance = null;
 
   try {
     const status = await recording.getStatusAsync();
     if (!status.isRecording) {
       await cleanupSpecificInstance(recording);
-      currentRecordingInstance = null;
       return null;
     }
 
     try {
       await recording.stopAndUnloadAsync();
-    } catch (stopError) {
+    } catch {
+      // If standard stop fails, try emergency cleanup
       if (typeof recording._cleanupForUnloadedRecorder === 'function') {
         await recording._cleanupForUnloadedRecorder();
-      } else
-        {}
+      }
     }
 
-    const uri = recording.getURI();
-    currentRecordingInstance = null;
-    return uri;
-  } catch (err) {
+    return recording.getURI();
+  } catch {
     try {
       await cleanupSpecificInstance(recording);
-    } catch (cleanupErr) {}
-    currentRecordingInstance = null;
+    } catch {
+      // Ignore cleanup errors
+    }
     return null;
   }
 };
 
+/**
+ * Clean up the current recording instance and optionally delete the file
+ */
 export const cleanupCurrentRecording = async (fileUriToDelete?: string): Promise<void> => {
   const instanceToClean = currentRecordingInstance;
   currentRecordingInstance = null;
+  
   if (instanceToClean) {
     await cleanupSpecificInstance(instanceToClean.recording);
-  } else
-    {}
+  }
 
   if (fileUriToDelete) {
     await deleteFile(fileUriToDelete);
   }
 };
 
+/**
+ * Clean up a specific recording instance
+ */
 async function cleanupSpecificInstance(recording: Audio.Recording): Promise<void> {
   try {
     await recording.stopAndUnloadAsync();
-  } catch (err) {
+  } catch {
+    // If standard cleanup fails, try emergency cleanup
     if (typeof recording._cleanupForUnloadedRecorder === 'function') {
-       try {
-         await recording._cleanupForUnloadedRecorder();
-       } catch (cleanupErr) {}
+      try {
+        await recording._cleanupForUnloadedRecorder();
+      } catch {
+        // Ignore further cleanup errors
+      }
     }
   }
 }
 
+/**
+ * Delete a file if it exists
+ */
 async function deleteFile(fileUri: string): Promise<void> {
   try {
     const fileInfo = await FileSystem.getInfoAsync(fileUri);
     if (fileInfo.exists) {
       await FileSystem.deleteAsync(fileUri, { idempotent: true });
-    } else {}
-  } catch (deleteErr) {}
+    }
+  } catch {
+    // Ignore file deletion errors
+  }
 }

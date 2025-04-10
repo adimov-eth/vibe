@@ -17,6 +17,7 @@ export function useAuthentication() {
   const initialCheckAttemptedRef = useRef(false);
 
   const checkAuthStatus = useCallback(async () => {
+    console.log('[useAuthentication] checkAuthStatus CALLED');
     let finalIsAuthenticated: boolean = false;
     let finalUser: AuthUser | null = null;
 

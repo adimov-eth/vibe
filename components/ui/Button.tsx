@@ -2,12 +2,12 @@ import { colors, layout, spacing, typography } from '@/constants/styles';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import {
-  ActivityIndicator,
-  StyleProp,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  ViewStyle,
+    ActivityIndicator,
+    StyleProp,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    ViewStyle,
 } from 'react-native';
 
 interface ButtonProps {
@@ -54,8 +54,8 @@ export const Button: React.FC<ButtonProps> = React.memo(
     ];
 
     const iconColor = isDisabled
-      ? styles[`${variant}DisabledText`].color
-      : styles[`${variant}Text`].color;
+      ? styles[`${variant}DisabledText`]?.color || colors.inactive
+      : styles[`${variant}Text`]?.color || colors.text.primary;
 
     const iconSize = size === 'small' ? 16 : size === 'large' ? 24 : 20;
 

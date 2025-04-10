@@ -1,5 +1,5 @@
 import { animation, colors } from '@/constants/styles';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 
 interface AudioWaveformProps {
@@ -10,22 +10,36 @@ interface AudioWaveformProps {
   testID?: string;
 }
 
+/**
+ * Audio waveform visualization component
+ * Shows animated bars that react to recording state
+ */
 export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
   ({
     isActive,
     color = colors.primary,
-    barCount = 40,
+    barCount = 20,
     intensity = 0.8,
     testID,
   }: AudioWaveformProps) => {
+    // Create animation values once on mount
     const barValues = useRef<Animated.Value[]>(
       Array(barCount).fill(0).map(() => new Animated.Value(0.2))
     ).current;
 
     const phaseAnim = useRef(new Animated.Value(0)).current;
 
+    // Generate static heights for inactive state
+    const staticHeights = useMemo(() => {
+      return Array(barCount).fill(0).map((_, i) => {
+        return 0.2 + 0.1 * Math.sin(i / barCount * Math.PI * 2);
+      });
+    }, [barCount]);
+
+    // Set up animations when active state changes
     useEffect(() => {
       if (isActive) {
+        // Create phase animation for active state
         const phaseAnimation = Animated.loop(
           Animated.sequence([
             Animated.timing(phaseAnim, {
@@ -41,25 +55,26 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
           ])
         );
 
+        // Start animation
         phaseAnimation.start();
 
+        // Update bar heights based on phase
         const listener = phaseAnim.addListener(({ value }) => {
           barValues.forEach((anim, i) => {
+            // Generate smooth wave pattern with phase offset
             const phase = (value + i / barCount) % 1;
             const height = 0.2 + intensity * Math.abs(Math.sin(phase * Math.PI * 2));
             anim.setValue(height);
           });
         });
 
+        // Clean up animations on unmount or state change
         return () => {
           phaseAnimation.stop();
           phaseAnim.removeListener(listener);
         };
       } else {
-        const staticHeights = Array(barCount).fill(0).map((_, i) => {
-          return 0.2 + 0.1 * Math.sin(i / barCount * Math.PI * 2);
-        });
-
+        // Animate to static pattern when inactive
         barValues.forEach((anim, i) => {
           Animated.spring(anim, {
             toValue: staticHeights[i],
@@ -68,14 +83,17 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = React.memo(
           }).start();
         });
       }
-    }, [isActive, barValues, phaseAnim, barCount, intensity]);
+    }, [isActive, barValues, phaseAnim, barCount, intensity, staticHeights]);
 
     return (
       <View style={styles.container} testID={testID}>
         <View style={styles.waveform}>
           {barValues.map((anim, index) => {
+            // Calculate opacity based on distance from center
             const isCenter = index === Math.floor(barCount / 2);
-            const opacity = isCenter ? 1 : 0.5 + (0.5 * (1 - Math.abs((index - barCount / 2) / (barCount / 2))));
+            const opacity = isCenter 
+              ? 1 
+              : 0.5 + (0.5 * (1 - Math.abs((index - barCount / 2) / (barCount / 2))));
 
             return (
               <Animated.View
@@ -123,4 +141,4 @@ const styles = StyleSheet.create({
     marginHorizontal: 1,
     borderRadius: 2,
   },
-}); 
+});

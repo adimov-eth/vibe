@@ -33,8 +33,11 @@ const NavigationLayout = () => {
   }, [initializeAppState, initializeUploads]);
 
   if (!appIsReady) {
+    console.log('[RootLayout] App not ready, returning null');
     return null;
   }
+
+  console.log('[RootLayout] App is ready, rendering stack');
 
   return (
      <>
