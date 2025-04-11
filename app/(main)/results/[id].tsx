@@ -1,4 +1,5 @@
 // /Users/adimov/Developer/final/vibe/app/(main)/results/[id].tsx
+// No changes needed
 import { ResultsView } from '@/components/conversation/ResultsView';
 import { AppBar } from '@/components/layout/AppBar';
 import { Container } from '@/components/layout/Container';

@@ -229,6 +229,7 @@ export interface WebSocketSlice {
   reconnectInterval: number;
   maxReconnectDelay: number;
   isConnecting: boolean;
+  isAuthenticated: boolean;
   connectionPromise: Promise<void> | null; // Track connection attempts
   calculateBackoff: () => number;
   connectWebSocket: () => Promise<void>;
@@ -237,6 +238,7 @@ export interface WebSocketSlice {
   unsubscribeFromConversation: (conversationId: string) => Promise<void>;
   clearMessages: () => void;
   getConversationResultError: (conversationId: string) => string | null;
+  _restoreSubscriptions: () => Promise<void>;
 }
 
 export interface UploadSlice {

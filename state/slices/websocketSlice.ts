@@ -1,4 +1,5 @@
 // /Users/adimov/Developer/final/vibe/state/slices/websocketSlice.ts
+// No changes needed - Client logic correctly prioritizes session token.
 import { getAuthTokens } from '@/utils/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Draft } from 'immer'; // Import Draft type for casting
@@ -18,6 +19,8 @@ interface WebSocketActions {
   unsubscribeFromConversation: (conversationId: string) => Promise<void>;
   clearMessages: () => void;
   getConversationResultError: (conversationId: string) => string | null;
+  // Add internal action to handle subscription restoration
+  _restoreSubscriptions: () => Promise<void>;
 }
 
 // Keep the StateCreator signature simple, assuming middleware is external
@@ -43,6 +46,7 @@ export const createWebSocketSlice: StateCreator<
       maxReconnectDelay: 30000,
       isConnecting: false,
       connectionPromise: null,
+      isAuthenticated: false, // New state: Track WS authentication status
   };
 
   // Define actions
@@ -77,8 +81,30 @@ export const createWebSocketSlice: StateCreator<
               state.isConnecting = false;
               state.reconnectAttempts = 0;
               state.connectionPromise = null;
+              state.isAuthenticated = false; // Reset auth status on disconnect
           });
       },
+
+      _restoreSubscriptions: async (): Promise<void> => {
+           try {
+               const storedTopics = await AsyncStorage.getItem(WEBSOCKET_SUBSCRIPTIONS_KEY);
+               if (storedTopics) {
+                   const topics = JSON.parse(storedTopics) as string[];
+                   console.log(`[WS Client] Restoring ${topics.length} subscriptions after successful auth...`);
+                   topics.forEach(topic => {
+                       const conversationId = topic.startsWith('conversation:') ? topic.split(':')[1] : null;
+                       if (conversationId) {
+                           // Call subscribe, which will now send if authenticated
+                           actions.subscribeToConversation(conversationId);
+                       } else {
+                           console.warn(`[WS Client] Skipping restoration of invalid topic: ${topic}`);
+                       }
+                   });
+               }
+           } catch (e: unknown) {
+               console.error('[WS Client] Error restoring subscriptions:', e instanceof Error ? e.message : e);
+           }
+       },
 
       connectWebSocket: async (): Promise<void> => {
           const currentPromise = get().connectionPromise;
@@ -93,16 +119,20 @@ export const createWebSocketSlice: StateCreator<
               resolveConnectionPromise = resolve;
           });
 
-          set(state => { state.connectionPromise = newConnectionPromise; });
+          set(state => {
+              state.connectionPromise = newConnectionPromise;
+              state.isAuthenticated = false; // Reset auth on new connection attempt
+          });
 
           const connectLogic = async () => {
               console.log('[WS Client] connectWebSocket: Starting connection logic.');
               set(state => { state.isConnecting = true; });
 
               const currentSocket = get().socket;
-              if (currentSocket && currentSocket.readyState === WebSocket.OPEN) {
-                  console.log('[WS Client] connectWebSocket: Already connected.');
+              if (currentSocket && currentSocket.readyState === WebSocket.OPEN && get().isAuthenticated) {
+                  console.log('[WS Client] connectWebSocket: Already connected and authenticated.');
                   set(state => { state.isConnecting = false; });
+                  resolveConnectionPromise();
                   return;
               }
 
@@ -116,14 +146,16 @@ export const createWebSocketSlice: StateCreator<
 
               try {
                   const tokens = await getAuthTokens();
-                  const token = tokens.sessionToken || tokens.identityToken;
+                  const token = tokens.sessionToken || tokens.identityToken; // Correctly prefers session token
 
                   if (!token) {
                       console.error("[WS Client] connectWebSocket: No session or identity token found. Cannot authenticate.");
-                      set(state => { state.isConnecting = false; });
+                      set(state => { state.isConnecting = false; state.connectionPromise = null; });
+                      resolveConnectionPromise();
                       return;
                   }
-                  console.log(`[WS Client] connectWebSocket: Using token (type: ${tokens.sessionToken ? 'session' : 'identity'})`);
+                  const tokenType = tokens.sessionToken ? 'session' : 'identity';
+                  console.log(`[WS Client] connectWebSocket: Using ${tokenType} token`);
 
                   const connectionUrl = WS_URL;
                   console.log('[WS Client] connectWebSocket: Attempting to connect to:', connectionUrl);
@@ -140,37 +172,21 @@ export const createWebSocketSlice: StateCreator<
                       set((state) => {
                           state.reconnectAttempts = 0;
                           state.isConnecting = false;
+                          // Don't set isAuthenticated here, wait for auth_success
                       });
 
                       try {
-                          const tokenType = tokens.sessionToken ? 'session' : 'identity';
                           console.log(`[WS Client] WebSocket Event: onopen - Sending authentication using ${tokenType} token...`);
-                          const authMessage = JSON.stringify({ type: 'auth', token: token });
+                          const authMessage = JSON.stringify({ type: 'auth', token: token }); // Sends the correct token
                           ws.send(authMessage);
                           console.log('[WS Client] WebSocket Event: onopen - Authentication sent.');
+                          // DO NOT restore subscriptions here immediately
                       } catch (sendError) {
                           console.error('[WS Client] WebSocket Event: onopen - Failed to send auth message:', sendError);
                           actions.disconnectWebSocket(4001, 'Failed to send auth');
                           return;
                       }
-
-                      try {
-                          const storedTopics = await AsyncStorage.getItem(WEBSOCKET_SUBSCRIPTIONS_KEY);
-                          if (storedTopics) {
-                              const topics = JSON.parse(storedTopics) as string[];
-                              console.log(`[WS Client] WebSocket Event: onopen - Restoring ${topics.length} subscriptions...`);
-                              topics.forEach(topic => {
-                                  const conversationId = topic.startsWith('conversation:') ? topic.split(':')[1] : null;
-                                  if (conversationId) {
-                                      actions.subscribeToConversation(conversationId);
-                                  } else {
-                                      console.warn(`[WS Client] WebSocket Event: onopen - Skipping restoration of invalid topic: ${topic}`);
-                                  }
-                              });
-                          }
-                      } catch (e: unknown) {
-                          console.error('[WS Client] WebSocket Event: onopen - Error restoring subscriptions:', e instanceof Error ? e.message : e);
-                      }
+                      // Subscriptions are restored *after* receiving auth_success in onmessage
                   };
 
                   ws.onmessage = (event) => {
@@ -243,11 +259,16 @@ export const createWebSocketSlice: StateCreator<
                                   console.error("[WS Client] Received global error:", message.payload.error);
                               }
 
+                              // --- Handle Authentication Success ---
                               if (messageType === 'auth_success') {
                                   console.log(`[WS Client] WebSocket Event: onmessage - Authentication successful. User ID: ${message.userId}`);
+                                  state.isAuthenticated = true; // Set auth state
+                                  // Trigger subscription restoration *after* setting auth state
+                                  actions._restoreSubscriptions();
                               } else if (messageType === 'subscription_confirmed') {
                                   console.log(`[WS Client] WebSocket Event: onmessage - Subscription confirmed for topic: ${message.payload.topic}`);
                               }
+                              // --- End Auth Success Handling ---
 
                               state.wsMessages.push(message);
                               if (state.wsMessages.length > MAX_WS_MESSAGES) {
@@ -293,6 +314,7 @@ export const createWebSocketSlice: StateCreator<
                           state.socket = null;
                           state.isConnecting = false;
                           state.connectionPromise = null;
+                          state.isAuthenticated = false; // Reset auth status
                           if (!isAuthError && !shouldReconnect) {
                               state.reconnectAttempts = 0;
                           }
@@ -330,6 +352,7 @@ export const createWebSocketSlice: StateCreator<
                       set((state) => { // state is Draft<StoreState>
                           state.isConnecting = false;
                           state.connectionPromise = null;
+                          state.isAuthenticated = false; // Reset auth status
                       });
                   };
 
@@ -346,6 +369,7 @@ export const createWebSocketSlice: StateCreator<
                   set((state) => { // state is Draft<StoreState>
                       state.isConnecting = false;
                       state.connectionPromise = null;
+                      state.isAuthenticated = false; // Reset auth status
                       if (state.socket && state.socket.readyState !== WebSocket.CLOSED) {
                           state.socket.close(1011, "Initial setup error");
                       }
@@ -379,6 +403,7 @@ export const createWebSocketSlice: StateCreator<
           const state = get();
           const socket = state.socket;
           const topic = `conversation:${conversationId}`;
+          let shouldSend = false;
 
           try {
               const storedTopics = await AsyncStorage.getItem(WEBSOCKET_SUBSCRIPTIONS_KEY);
@@ -387,12 +412,20 @@ export const createWebSocketSlice: StateCreator<
                   topics.push(topic);
                   await AsyncStorage.setItem(WEBSOCKET_SUBSCRIPTIONS_KEY, JSON.stringify(topics));
                   console.log(`[WS Client] subscribeToConversation: Stored request for ${topic}`);
+                  shouldSend = true; // Send only if it was newly stored
+              } else {
+                  // If already stored, check if we are authenticated and connected, maybe send again?
+                  // For simplicity, only send if newly stored or if explicitly called when already connected/auth
+                  shouldSend = state.isAuthenticated && socket?.readyState === WebSocket.OPEN;
+                  if (!shouldSend) {
+                      console.log(`[WS Client] subscribeToConversation: Already subscribed or not ready to send for ${topic}`);
+                  }
               }
           } catch (e: unknown) {
-              console.error('[WS Client] subscribeToConversation: Failed to store request:', e instanceof Error ? e.message : e);
+              console.error('[WS Client] subscribeToConversation: Failed to store/check request:', e instanceof Error ? e.message : e);
           }
 
-          if (socket?.readyState === WebSocket.OPEN) {
+          if (shouldSend && socket?.readyState === WebSocket.OPEN && state.isAuthenticated) {
               try {
                   const subscribeMessage = JSON.stringify({ type: 'subscribe', topic: topic });
                   socket.send(subscribeMessage);
@@ -402,8 +435,10 @@ export const createWebSocketSlice: StateCreator<
               }
           } else {
               const socketState = socket ? (WebSocket.CONNECTING === socket.readyState ? 'CONNECTING' : WebSocket.CLOSING === socket.readyState ? 'CLOSING' : WebSocket.CLOSED === socket.readyState ? 'CLOSED' : 'UNKNOWN') : 'null';
-              console.log(`[WS Client] subscribeToConversation: Socket not open (state: ${socketState}). Will send on connect.`);
-              if (!socket || socket.readyState === WebSocket.CLOSED) {
+              const authState = state.isAuthenticated ? 'Authenticated' : 'Not Authenticated';
+              console.log(`[WS Client] subscribeToConversation: Socket not ready/authenticated to send subscribe for ${topic}. Socket: ${socketState}, Auth: ${authState}, Stored: ${!shouldSend}.`);
+              // Attempt reconnect if socket is closed and not connecting
+              if (!socket || socket.readyState === WebSocket.CLOSED && !state.isConnecting) {
                   console.log("[WS Client] subscribeToConversation: Socket closed, attempting reconnect.");
                   actions.connectWebSocket();
               }
@@ -421,12 +456,12 @@ export const createWebSocketSlice: StateCreator<
               let topics: string[] = storedTopics ? JSON.parse(storedTopics) : [];
               topics = topics.filter(t => t !== topic);
               await AsyncStorage.setItem(WEBSOCKET_SUBSCRIPTIONS_KEY, JSON.stringify(topics));
-              console.log(`[WS Client] unsubscribeFromConversation: Unsubscribed from ${topic}`);
+              console.log(`[WS Client] unsubscribeFromConversation: Removed stored request for ${topic}`);
           } catch (e: unknown) {
-              console.error('[WS Client] unsubscribeFromConversation: Failed to store unsubscription:', e instanceof Error ? e.message : e);
+              console.error('[WS Client] unsubscribeFromConversation: Failed to remove stored request:', e instanceof Error ? e.message : e);
           }
 
-          if (socket?.readyState === WebSocket.OPEN) {
+          if (socket?.readyState === WebSocket.OPEN && state.isAuthenticated) {
               try {
                   const unsubscribeMessage = JSON.stringify({ type: 'unsubscribe', topic: topic });
                   socket.send(unsubscribeMessage);
@@ -436,16 +471,13 @@ export const createWebSocketSlice: StateCreator<
               }
           } else {
               const socketState = socket ? (WebSocket.CONNECTING === socket.readyState ? 'CONNECTING' : WebSocket.CLOSING === socket.readyState ? 'CLOSING' : WebSocket.CLOSED === socket.readyState ? 'CLOSED' : 'UNKNOWN') : 'null';
-              console.log(`[WS Client] unsubscribeFromConversation: Socket not open (state: ${socketState}). Will send on connect.`);
-              if (!socket || socket.readyState === WebSocket.CLOSED) {
-                  console.log("[WS Client] unsubscribeFromConversation: Socket closed, attempting reconnect.");
-                  actions.connectWebSocket();
-              }
+              const authState = state.isAuthenticated ? 'Authenticated' : 'Not Authenticated';
+              console.log(`[WS Client] unsubscribeFromConversation: Socket not ready/authenticated to send unsubscribe for ${topic}. Socket: ${socketState}, Auth: ${authState}`);
           }
       }, // End of unsubscribeFromConversation
 
       clearMessages: () => {
-          set((state) => {
+          set((state) => { // state is Draft<StoreState>
               state.wsMessages = [];
           });
       },
