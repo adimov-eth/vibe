@@ -1,3 +1,4 @@
+// /Users/adimov/Developer/final/vibe/app/(main)/results/[id].tsx
 import { ResultsView } from '@/components/conversation/ResultsView';
 import { AppBar } from '@/components/layout/AppBar';
 import { Container } from '@/components/layout/Container';
@@ -8,7 +9,10 @@ import { useConversationResult } from '@/hooks/useConversationResult';
 import useStore from '@/state'; // Import useStore
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useMemo } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+
+// Define the possible statuses more explicitly
+type ResultStatus = 'uploading' | 'processing' | 'completed' | 'error';
 
 export default function Results() {
   const { id } = useLocalSearchParams();
@@ -19,8 +23,10 @@ export default function Results() {
   const { conversation, isLoading: conversationLoading, isError: conversationError } = useConversation(conversationId);
   const resultHook = useConversationResult(conversationId);
   const resultData = resultHook?.data; // Data from WebSocket (transcript, analysis, status)
-  const isResultLoading = resultHook?.isLoading ?? true; // Loading state from WebSocket hook
-  const resultError = resultHook?.error;
+  // Note: isResultLoading from the hook indicates if the hook itself is initializing or waiting for *any* data.
+  // We will rely more on the calculated finalStatus below.
+  // const isResultLoading = resultHook?.isLoading ?? true;
+  const resultError = resultHook?.error; // Error reported by the WS hook (connection issues, etc.)
   const refetchResult = resultHook?.refetch;
 
   // Get upload status from store
@@ -75,14 +81,36 @@ export default function Results() {
   }, [conversationId, requiredUploadKeys, uploadProgressMap, uploadResultsMap]);
 
 
-  // Determine overall state: Uploading -> Processing (WebSocket) -> Completed/Error
-  const isLoading = conversationLoading || (uploadStatus.completed && isResultLoading);
-  // Combine errors: WS result error OR upload error OR conversation fetch error
-  const finalError: string | null = resultError || uploadStatus.error || (conversationError ? 'Failed to load conversation details' : null);
-  // Determine status: Start with upload status, then WS status
-  const finalStatus = uploadStatus.failed ? 'error' : 
-                      !uploadStatus.completed ? 'uploading' : 
-                      (resultData?.status || 'processing'); // If uploads done, use WS status (or 'processing' if WS hasn't reported yet)
+  // Determine overall status and error
+  const finalStatus: ResultStatus = useMemo(() => {
+      if (uploadStatus.failed) return 'error';
+      if (!uploadStatus.completed) return 'uploading';
+      if (resultError) return 'error'; // WS hook reported an error
+      if (resultData?.status === 'error') return 'error'; // WS data indicates error
+      if (resultData?.status === 'completed') return 'completed';
+      // If uploads are done, and no errors reported, assume processing
+      return 'processing';
+  }, [uploadStatus, resultData, resultError]);
+
+  const finalError: string | null = useMemo(() => {
+      if (uploadStatus.failed) return uploadStatus.error || 'Upload failed';
+      if (resultError) return resultError; // Error from WS hook (e.g., connection)
+      if (resultData?.status === 'error') return resultData.error || 'Processing failed'; // Error reported via WS message
+      if (conversationError) return 'Failed to load conversation details'; // Error fetching conversation metadata
+      return null;
+  }, [uploadStatus, resultError, resultData, conversationError]);
+
+  // Calculate progress based on the current status
+  const finalProgress: number = useMemo(() => {
+      if (finalStatus === 'completed') return 100;
+      if (finalStatus === 'error') return 100; // Show 100% on error? Or last known? Let's use 100.
+      if (finalStatus === 'uploading') return uploadStatus.progress;
+      if (finalStatus === 'processing') {
+          // Use WS progress if available, otherwise estimate based on upload completion
+          return resultData?.progress ?? (uploadStatus.completed ? 50 : 0); // Start at 50 if uploads done but no WS progress yet
+      }
+      return 0;
+  }, [finalStatus, uploadStatus.progress, uploadStatus.completed, resultData?.progress]);
 
   // --- Handlers ---
   const handleGoToHome = React.useCallback(() => {
@@ -91,7 +119,6 @@ export default function Results() {
 
   const handleRetry = () => {
       if (uploadStatus.failed) {
-           // Find the failed upload ID and retry it
            for (const key of requiredUploadKeys) {
                 const uploadId = `${conversationId}_${key}`;
                 const result = uploadResultsMap[uploadId];
@@ -101,22 +128,28 @@ export default function Results() {
                     break; // Retry one at a time
                  }
            }
-      } else if (resultError) {
+      } else if (resultError || resultData?.status === 'error') {
           console.log(`[ResultsScreen] Retrying WebSocket connection/fetch for: ${conversationId}`);
           refetchResult && refetchResult();
+      } else if (conversationError) {
+          console.log(`[ResultsScreen] Retrying conversation fetch for: ${conversationId}`);
+          // Need a way to refetch conversation if useConversation provided it
+          // For now, maybe just reload the route?
+          router.replace(`/results/${conversationId}`);
       }
   };
 
   // --- UI ---
   const accentColor = React.useMemo(() => {
+    // Use default color if conversation data is still loading
+    if (conversationLoading) return colors.primary;
     return conversation?.mode === 'mediator' ? '#58BD7D' :
            conversation?.mode === 'counselor' ? '#3B71FE' :
            colors.primary;
-  }, [conversation?.mode]);
+  }, [conversation?.mode, conversationLoading]);
 
   // Loading/Error States
   if (!conversationId) {
-      // Render error for missing ID
        return (
            <Container withSafeArea>
               <AppBar title="Error" showBackButton onBackPress={handleGoToHome} />
@@ -129,41 +162,7 @@ export default function Results() {
        );
   }
 
-  if (isLoading && !finalError && finalStatus !== 'completed') {
-    // Render loading indicator (Upload or Processing)
-    let loadingText = 'Loading...';
-    let progressValue = 0;
-    if (finalStatus === 'uploading') {
-        loadingText = `Uploading audio... (${uploadStatus.progress}%)`;
-        progressValue = uploadStatus.progress;
-    } else if (finalStatus === 'processing') {
-        loadingText = 'Processing your conversation...';
-        // Use resultData.progress if available from WebSocket, otherwise show indeterminate/simple message
-        progressValue = resultData?.progress ?? 0; // Default to 0 if no specific progress from WS yet
-        if (progressValue === 0) loadingText = "Processing started..."; // More specific message if progress is 0
-    }
-
-    return (
-       <Container withSafeArea>
-          <AppBar title="Processing" showBackButton onBackPress={handleGoToHome} />
-          <View style={styles.centeredMessageContainer}>
-             <ActivityIndicator size="large" color={accentColor} />
-             <Text style={styles.processingText}>{loadingText}</Text>
-              {/* Show progress bar only if progress > 0 */}
-             {progressValue > 0 && (
-                <View style={styles.progressContainer}>
-                   <View style={styles.progressBackground}>
-                      <View style={[styles.progressBar, { width: `${progressValue}%`, backgroundColor: accentColor }]} />
-                   </View>
-                   <Text style={[styles.progressText, typography.label2]}>{progressValue}%</Text>
-                </View>
-             )}
-          </View>
-       </Container>
-    );
-  }
-
-  // Render ResultsView (Completed or Error)
+  // Render ResultsView - it will handle displaying loading/error/completed internally
   return (
     <Container withSafeArea>
       <AppBar
@@ -172,21 +171,14 @@ export default function Results() {
         onBackPress={handleGoToHome}
       />
       <View style={{ flex: 1 }}>
-         {/* Pass calculated status and potentially merged error message */}
         <ResultsView
-          isLoading={false} // Already handled loading state above
-          result={finalStatus === 'completed' ? {
-            status: 'completed',
-            summary: resultData?.analysis || '', // Use analysis from resultData
-            recommendations: [], // Add recommendations if available later
-            progress: 100
-          } : null}
-          error={finalError} // Pass combined error string (already a string or null)
+          status={finalStatus} // Pass the calculated status
+          resultData={resultData} // Pass the raw result data from WS
+          error={finalError} // Pass combined error string
+          progress={finalProgress} // Pass calculated progress
           accentColor={accentColor}
           onNewConversation={handleGoToHome}
-          onRetry={handleRetry} // Pass unified retry handler
-          // Provide a default progress value for the final state
-          progress={finalStatus === 'completed' ? 100 : (resultData?.progress ?? 0)}
+          onRetry={finalStatus === 'error' ? handleRetry : undefined} // Only show retry if status is error
         />
       </View>
     </Container>
@@ -194,7 +186,7 @@ export default function Results() {
 }
 
 const styles = StyleSheet.create({
-  centeredMessageContainer: { // Renamed from errorContainer/processingContainer
+  centeredMessageContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
@@ -211,30 +203,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: colors.text.secondary,
   },
-  processingText: {
-    ...typography.body1,
-    marginTop: spacing.lg,
-    textAlign: 'center',
-    color: colors.text.secondary,
-  },
-  progressContainer: {
-    width: '80%', // Adjust width as needed
-    alignItems: 'center',
-    marginTop: spacing.xl,
-  },
-  progressBackground: {
-    width: '100%',
-    height: 8,
-    backgroundColor: colors.border,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  progressBar: {
-    height: '100%',
-  },
-  progressText: {
-    marginTop: spacing.xs,
-    color: colors.text.secondary,
-  },
-  // Removed unused styles like container, connectionInfoContainer etc.
+  // Removed loading/progress styles from here, ResultsView/LoadingView handles them
 });
