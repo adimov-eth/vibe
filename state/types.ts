@@ -1,3 +1,4 @@
+// /Users/adimov/Developer/final/vibe/state/types.ts
 export interface User {
   id: string;
   firstName: string;
@@ -8,38 +9,41 @@ export interface User {
 
 export interface Conversation {
   id: string;
-  status: "waiting" | "active" | "completed";
-  mode: "mediator" | "counselor";
+  status: "waiting" | "active" | "completed" | "error"; // Added error status
+  mode: "mediator" | "counselor" | string; // Allow other string modes
   recordingType: "separate" | "live";
+  createdAt?: string; // Optional timestamp
+  updatedAt?: string; // Optional timestamp
+  analysis?: string; // Optional analysis result
+  transcript?: string; // Optional transcript
 }
 
 export interface UploadProgress {
   [key: string]: number; // uploadId = `${serverConversationId}_${audioKey}`
 }
 
-export interface PendingUpload {
-  localConversationId: string;
-  audioUri: string;
-  audioKey: string;
-}
+// This interface is for AsyncStorage, not directly in Zustand state
+// export interface PendingUpload {
+//   localConversationId: string;
+//   audioUri: string;
+//   audioKey: string;
+// }
 
 export interface UploadResult {
   success: boolean;
   url?: string;
   error?: string;
   audioUri?: string;
-  conversationId?: string;
+  conversationId?: string; // Server ID
   audioKey?: string;
-  localConversationId?: string;
+  localConversationId?: string; // Original local ID
 }
 
-// Note: Backend API (GET /subscriptions/status) now provides expiresDate
-// consistently as milliseconds or null.
 export interface SubscriptionStatus {
   isActive: boolean;
   expiresDate: number | null; // Expect milliseconds or null
-  type: string | null;
-  subscriptionId: number | null;
+  type: string | null; // e.g., 'monthly', 'yearly'
+  subscriptionId: number | null; // Backend subscription ID
 }
 
 export interface UsageStats {
@@ -47,7 +51,7 @@ export interface UsageStats {
   limit: number;
   isSubscribed: boolean;
   remainingConversations: number;
-  resetDate: number;
+  resetDate: number; // Expect milliseconds timestamp
 }
 
 export interface ConversationSlice {
@@ -58,10 +62,11 @@ export interface ConversationSlice {
     mode: string,
     recordingType: "separate" | "live",
     localConversationId: string
-  ) => Promise<string>;
+  ) => Promise<string>; // Returns server ID
   getConversation: (conversationId: string) => Promise<Conversation>;
 }
 
+// API Response Types (used within slices)
 export interface SubscriptionResponse {
   subscription: SubscriptionStatus;
   message?: string;
@@ -72,25 +77,24 @@ export interface UsageResponse {
   message?: string;
 }
 
-export type WebSocketMessageType = 
-  | 'transcript' 
-  | 'analysis' 
-  | 'error' 
-  | 'status' 
-  | 'connected' 
-  | 'subscription_confirmed' 
-  | 'unsubscription_confirmed' 
+// WebSocket Message Types
+export type WebSocketMessageType =
+  | 'transcript'
+  | 'analysis'
+  | 'error'
+  | 'status'
+  | 'connected'
+  | 'subscription_confirmed'
+  | 'unsubscription_confirmed'
   | 'pong'
-  | 'audio'
+  | 'audio' // Represents audio processing status updates
   | 'auth_success';
 
-// Base message interface with common fields
 export interface BaseWebSocketMessage {
   type: WebSocketMessageType;
-  timestamp: string;
+  timestamp: string; // ISO 8601 timestamp string
 }
 
-// Specialized message interfaces for better type safety
 export interface TranscriptMessage extends BaseWebSocketMessage {
   type: 'transcript';
   payload: {
@@ -103,15 +107,16 @@ export interface AnalysisMessage extends BaseWebSocketMessage {
   type: 'analysis';
   payload: {
     conversationId: string;
-    content: string;
+    content: string; // The analysis result
   };
 }
 
 export interface ErrorMessage extends BaseWebSocketMessage {
   type: 'error';
   payload: {
-    conversationId?: string;
-    error: string;
+    conversationId?: string; // Optional: error might be global
+    error: string; // Error description
+    code?: string; // Optional error code
   };
 }
 
@@ -119,18 +124,20 @@ export interface StatusMessage extends BaseWebSocketMessage {
   type: 'status';
   payload: {
     conversationId: string;
-    status: string;
-    gptResponse?: string;
-    error?: string;
+    status: string; // e.g., 'processing_transcript', 'processing_analysis', 'completed', 'error'
+    gptResponse?: string; // Optional: Analysis might come via status update
+    error?: string; // Optional: Error details might come via status update
+    progress?: number; // Optional: Progress percentage
   };
 }
 
 export interface AudioMessage extends BaseWebSocketMessage {
   type: 'audio';
   payload: {
-    audioId: string;
+    audioId: string; // Identifier for the specific audio segment (e.g., '1', '2', 'live')
     status: 'processing' | 'transcribed' | 'failed';
-    conversationId?: string;
+    conversationId?: string; // Associated conversation ID
+    error?: string; // Error message if status is 'failed'
   };
 }
 
@@ -143,11 +150,11 @@ export interface ConnectionMessage extends BaseWebSocketMessage {
   };
 }
 
-export interface SubscriptionMessage extends BaseWebSocketMessage {
+export interface SubscriptionConfirmationMessage extends BaseWebSocketMessage {
   type: 'subscription_confirmed' | 'unsubscription_confirmed';
   payload: {
-    topic: string;
-    activeSubscriptions: string[];
+    topic: string; // e.g., 'conversation:uuid'
+    activeSubscriptions: string[]; // List of currently active topics for this connection
   };
 }
 
@@ -160,30 +167,43 @@ export interface PongMessage extends BaseWebSocketMessage {
 
 export interface AuthSuccessMessage extends BaseWebSocketMessage {
   type: 'auth_success';
-  userId: string;
+  userId: string; // User ID confirmed by the backend
 }
 
-// Union type for all WebSocket messages
-export type WebSocketMessage = 
+// Union type for all possible WebSocket messages
+export type WebSocketMessage =
   | TranscriptMessage
   | AnalysisMessage
   | ErrorMessage
   | StatusMessage
   | AudioMessage
   | ConnectionMessage
-  | SubscriptionMessage
+  | SubscriptionConfirmationMessage
   | PongMessage
   | AuthSuccessMessage;
 
-// Added ConversationResult Type
+// Represents the state of a single conversation's results being processed via WebSocket
 export interface ConversationResult {
   transcript?: string;
   analysis?: string;
   status: 'processing' | 'completed' | 'error';
-  error?: string | null; // Allow null
-  progress: number;
+  error?: string | null;
+  progress: number; // Percentage (0-100)
 }
 
+// Interface for subscription products fetched from the store (IAP)
+export interface SubscriptionProduct {
+  productId: string;
+  title: string;
+  description: string;
+  price: string; // Formatted price string
+  localizedPrice?: string; // iOS specific formatted price
+  subscriptionOfferDetails?: { // Android specific
+    offerToken: string;
+  }[];
+}
+
+// Define the slices that make up the total store state
 export interface SubscriptionSlice {
   subscriptionStatus: SubscriptionStatus | null;
   usageStats: UsageStats | null;
@@ -197,63 +217,61 @@ export interface SubscriptionSlice {
   cleanupStore: () => void;
   purchaseSubscription: (productId: string, offerToken?: string) => Promise<void>;
   restorePurchases: () => Promise<void>;
-  setInitialUsageStats: (stats: UsageStats) => void;
+  setInitialUsageStats: (stats: UsageStats) => void; // Potentially redundant
 }
 
 export interface WebSocketSlice {
   socket: WebSocket | null;
-  wsMessages: WebSocketMessage[];
+  wsMessages: WebSocketMessage[]; // History of raw messages (limited size)
+  conversationResults: { [conversationId: string]: ConversationResult }; // Processed results per conversation
   reconnectAttempts: number;
   maxReconnectAttempts: number;
   reconnectInterval: number;
   maxReconnectDelay: number;
   isConnecting: boolean;
+  connectionPromise: Promise<void> | null; // Track connection attempts
   calculateBackoff: () => number;
   connectWebSocket: () => Promise<void>;
+  disconnectWebSocket: (code?: number, reason?: string) => void;
   subscribeToConversation: (conversationId: string) => Promise<void>;
   unsubscribeFromConversation: (conversationId: string) => Promise<void>;
   clearMessages: () => void;
-  conversationResults: { [key: string]: ConversationResult };
   getConversationResultError: (conversationId: string) => string | null;
 }
 
 export interface UploadSlice {
-  uploadProgress: UploadProgress;
-  uploadResults: { [uploadId: string]: UploadResult };
-  localToServerIds: { [localConversationId: string]: string };
-  initializeUploads: () => Promise<void>;
-  uploadAudio: (
+  uploadProgress: UploadProgress; // Map: uploadId -> percentage
+  uploadResults: { [uploadId: string]: UploadResult }; // Map: uploadId -> result object
+  localToServerIds: { [localConversationId: string]: string }; // Map: local UUID -> server UUID
+  initializeUploads: () => Promise<void>; // Check AsyncStorage for pending uploads on startup
+  uploadAudio: ( // Trigger foreground upload
     audioUri: string,
-    conversationId: string,
-    audioKey: string,
-    localConversationId?: string,
+    conversationId: string, // Server ID
+    audioKey: string, // '1', '2', or 'live'
+    localConversationId?: string, // Original local ID
     isPersistedRetry?: boolean
   ) => Promise<void>;
-  saveUploadIntent: (localConversationId: string, audioUri: string, audioKey: string) => Promise<void>;
-  setLocalToServerId: (localId: string, serverId: string) => Promise<void>;
-  clearUploadState: (conversationId: string) => void;
-  retryUpload: (uploadId: string) => Promise<void>;
+  saveUploadIntent: ( // Save intent to upload (triggers foreground or saves to AsyncStorage)
+    localConversationId: string,
+    audioUri: string,
+    audioKey: string
+  ) => Promise<void>;
+  setLocalToServerId: (localId: string, serverId: string) => Promise<void>; // Update mapping, trigger pending uploads
+  clearUploadState: (conversationId: string) => void; // Clear UI state for a conversation
+  retryUpload: (uploadId: string) => Promise<void>; // Manually retry a failed upload
 }
 
-export interface SubscriptionProduct {
-  productId: string;
-  title: string;
-  description: string;
-  price: string;
-  subscriptionOfferDetails?: {
-    offerToken: string;
-  }[];
-}
-
+// Combine all slices into the main store state type
 export type StoreState = ConversationSlice &
   UploadSlice &
   SubscriptionSlice &
   WebSocketSlice;
 
-export interface StoreActions {
-  fetchToken: () => Promise<string | null>;
-  getUserProfile: () => Promise<User | null>;
-}
+// Optional: Define actions that might operate across slices (if needed)
+// export interface StoreActions {
+//   someCrossSliceAction: () => Promise<void>;
+// }
 
-export const API_BASE_URL = "https://v.bkk.lol";
-export const WS_URL = "wss://v.bkk.lol/ws";
+// Define API constants
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "https://v.bkk.lol"; // Provide fallback
+export const WS_URL = process.env.EXPO_PUBLIC_WS_URL || "wss://v.bkk.lol/ws"; // Provide fallback

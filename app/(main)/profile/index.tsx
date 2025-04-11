@@ -1,3 +1,4 @@
+// /Users/adimov/Developer/final/vibe/app/(main)/profile/index.tsx
 import { AppBar } from '@/components/layout/AppBar';
 import { AccountSettingsCard } from '@/components/profile/AccountSettingsCard';
 import { AppDataCard } from '@/components/profile/AppDataCard';
@@ -15,44 +16,51 @@ export default function Profile() {
   const router = useRouter();
   const { user, signOut } = useAuthentication();
   const { clearCache, isClearing, error: clearError } = useClearCache();
-  const { subscriptionStatus, usageStats, loading, error, loadData } = useUsage();
+  const { subscriptionStatus, usageStats, loading, error, loadData } = useUsage(); // error is string | null
 
   useEffect(() => {
-    const fetchData = async () => {
-      if (!subscriptionStatus || !usageStats) {
-        await loadData(); // Load initial data if not present
-      }
-    };
-    fetchData();
-  }, []); // Removed dependency array to rely on explicit load/refresh
+    // Load data on initial mount or if data is missing
+    if (!subscriptionStatus || !usageStats) {
+      loadData();
+    }
+    // No dependency array means this runs on every render, which might be excessive.
+    // Consider adding dependencies if loadData should only run when specific things change,
+    // or rely solely on the RefreshControl for manual updates.
+    // For now, keeping it simple to load if data is missing.
+  }, [subscriptionStatus, usageStats, loadData]); // Added dependencies
 
   const handleBackPress = () => router.back();
   const handleSignOut = async () => await signOut();
   const navigateToPaywall = () => router.push('/(main)/paywall');
 
-  // Calculate derived values (memoize if necessary, but likely fine here)
+  // Calculate derived values
   const currentUsage = usageStats?.currentUsage ?? 0;
   const remainingConversations = usageStats?.remainingConversations ?? 0;
-  const usageLimit = usageStats ? currentUsage + remainingConversations : 0;
+  // Correctly calculate usageLimit based on whether user is subscribed
+  const usageLimit = usageStats
+    ? usageStats.isSubscribed
+      ? Infinity // Or a very large number / null to represent unlimited
+      : usageStats.limit
+    : 0;
 
-  const ProfileHeader = React.memo(() => ( // Memoize static header
+  const ProfileHeader = React.memo(() => (
     <View style={styles.profileHeader}>
       <View style={styles.avatarContainer}>
         <Text style={styles.avatarText}>
-          {user?.firstName?.[0] || user?.email?.[0] || '?'}
+          {user?.firstName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?'}
         </Text>
       </View>
-      <Text style={styles.userName}>
-        {user?.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : 'User'}
+      <Text style={styles.userName} numberOfLines={1} ellipsizeMode="tail">
+        {user?.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : 'Vibe User'}
       </Text>
-      <Text style={styles.userEmail}>
+      <Text style={styles.userEmail} numberOfLines={1} ellipsizeMode="tail">
         {user?.email || 'No email provided'}
       </Text>
     </View>
   ));
 
-  // Loading state
-  if (loading && !usageStats && !subscriptionStatus) { // More precise initial loading check
+  // Loading state for initial load
+  if (loading && !usageStats && !subscriptionStatus) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <AppBar title="Profile" showBackButton={true} onBackPress={handleBackPress} />
@@ -64,13 +72,14 @@ export default function Profile() {
     );
   }
 
-  // Error state
-  if (error && !usageStats && !subscriptionStatus) { // More precise initial error check
+  // Error state for initial load
+  if (error && !usageStats && !subscriptionStatus) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <AppBar title="Profile" showBackButton={true} onBackPress={handleBackPress} />
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error.message || 'Failed to load profile data'}</Text>
+          {/* Display error string directly */}
+          <Text style={styles.errorText}>{error || 'Failed to load profile data'}</Text>
           <Button title="Retry" variant="primary" onPress={loadData} style={styles.retryButton}/>
         </View>
       </SafeAreaView>
@@ -90,18 +99,20 @@ export default function Profile() {
         contentContainerStyle={styles.contentContainer}
         refreshControl={
            <RefreshControl
-             refreshing={loading} // Use the 'loading' state for the refreshing indicator
-             onRefresh={loadData} // Call 'loadData' when pulled
+             refreshing={loading} // Show indicator whenever loading is true (initial or refresh)
+             onRefresh={loadData} // Call loadData on pull-to-refresh
              tintColor={colors.primary}
+             colors={[colors.primary]} // For Android
            />
         }
        >
         <ProfileHeader />
 
         {/* Display error inline if it occurs during refresh */}
-        {error && (
+        {error && ( // Show error even if some data exists (refresh error)
            <View style={styles.inlineErrorContainer}>
-              <Text style={styles.inlineErrorText}>Error refreshing data: {error.message}</Text>
+              {/* Display error string directly */}
+              <Text style={styles.inlineErrorText}>Error refreshing data: {error}</Text>
            </View>
         )}
 
@@ -117,10 +128,10 @@ export default function Profile() {
           <AppDataCard
             isClearingCache={isClearing}
             onClearCachePress={clearCache}
-            clearCacheError={clearError}
-            showDevOptions={__DEV__} // Show dev options only in development
+            clearCacheError={clearError} // Pass the error string
+            showDevOptions={__DEV__}
             currentUsage={currentUsage}
-            usageLimit={usageLimit}
+            usageLimit={usageLimit} // Pass calculated limit
             onViewPaywallPress={navigateToPaywall}
           />
         </Section>
@@ -146,16 +157,16 @@ const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background.primary },
   container: { flex: 1, backgroundColor: colors.background.primary },
-  contentContainer: { padding: spacing.lg, paddingBottom: spacing.xl }, // Add bottom padding
-  profileHeader: { alignItems: 'center', marginVertical: spacing.xl },
+  contentContainer: { padding: spacing.lg, paddingBottom: spacing.xl * 2 }, // Increased bottom padding
+  profileHeader: { alignItems: 'center', marginVertical: spacing.lg, paddingHorizontal: spacing.md }, // Added horizontal padding
   avatarContainer: {
     width: 80, height: 80, borderRadius: 40, backgroundColor: colors.primary,
     justifyContent: 'center', alignItems: 'center', marginBottom: spacing.md,
     ...layout.shadows.small,
   },
-  avatarText: { fontSize: 32, color: colors.text.inverse, fontFamily: 'Inter-Bold' }, // Ensure font is loaded
-  userName: { ...typography.heading2, marginBottom: spacing.xs, color: colors.text.primary },
-  userEmail: { ...typography.body1, color: colors.text.secondary },
+  avatarText: { fontSize: 32, color: colors.text.inverse, fontWeight: '600' }, // Use fontWeight
+  userName: { ...typography.heading2, marginBottom: spacing.xs, color: colors.text.primary, textAlign: 'center' },
+  userEmail: { ...typography.body1, color: colors.text.secondary, textAlign: 'center' },
   section: { marginBottom: spacing.xl },
   sectionTitle: { ...typography.heading3, marginBottom: spacing.md, color: colors.text.primary },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -168,6 +179,7 @@ const styles = StyleSheet.create({
       padding: spacing.md,
       borderRadius: layout.borderRadius.md,
       marginBottom: spacing.lg,
+      marginHorizontal: spacing.lg, // Match content padding
   },
   inlineErrorText: {
       ...typography.body2,

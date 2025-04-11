@@ -1,3 +1,4 @@
+// /Users/adimov/Developer/final/vibe/app/(main)/paywall.tsx
 import { AppBar } from '@/components/layout/AppBar';
 import { Container } from '@/components/layout/Container';
 import { Button } from '@/components/ui/Button';
@@ -27,19 +28,19 @@ export default function Paywall() {
   const [isRestoring, setIsRestoring] = useState(false);
   const [purchaseSuccess, setPurchaseSuccess] = useState(false);
 
-  const { 
+  const {
     isSubscribed,
     subscriptionProducts,
     purchase,
     restore,
     isLoading: subscriptionLoading,
-    error: subscriptionError,
+    error: subscriptionError, // error is string | null
   } = useSubscription();
 
-  const { 
+  const {
     usageStats: usageData,
     loading: usageLoading,
-    error: usageError,
+    error: usageError, // error is string | null
   } = useUsage();
 
   // Select yearly plan by default when products load
@@ -62,19 +63,21 @@ export default function Paywall() {
 
   const handlePurchase = async () => {
     if (!selectedPlan) return;
-    
+
     setIsPurchasing(true);
+    setPurchaseSuccess(false); // Reset success state
     try {
-      // Get Android-specific offer token if available
-      const product = Platform.OS === 'android' 
-        ? subscriptionProducts.find(p => p.productId === selectedPlan) 
+      const product = Platform.OS === 'android'
+        ? subscriptionProducts.find(p => p.productId === selectedPlan)
         : null;
       const offerToken = product?.subscriptionOfferDetails?.[0]?.offerToken;
-      
-      // Attempt purchase
+
       await purchase(selectedPlan, offerToken);
+      // Success is handled by the useEffect watching isSubscribed
     } catch (err) {
-      console.error('Purchase error:', err);
+      console.error('Purchase initiation error:', err);
+      // Error display is handled by the useSubscription hook's error state if it's set there
+      // Or show a generic toast/alert here if needed for immediate feedback
       setIsPurchasing(false);
     }
   };
@@ -83,8 +86,11 @@ export default function Paywall() {
     setIsRestoring(true);
     try {
       await restore();
+      // Restore success might implicitly update isSubscribed via listeners,
+      // or you might want to show a success toast here.
     } catch (err) {
       console.error('Restore error:', err);
+      // Error display is handled by the useSubscription hook's error state
     } finally {
       setIsRestoring(false);
     }
@@ -94,7 +100,7 @@ export default function Paywall() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace('/home');
+      router.replace('/(main)/home'); // Ensure correct home route
     }
   };
 
@@ -106,17 +112,17 @@ export default function Paywall() {
           <View style={localStyles.successIconContainer}>
             <Ionicons name="checkmark-circle" size={80} color={colors.success} />
           </View>
-          
+
           <Text style={localStyles.successTitle}>Subscription Activated!</Text>
-          
+
           <Text style={localStyles.successMessage}>
             Thank you for subscribing to VibeCheck Premium. You now have unlimited access to all features.
           </Text>
-          
+
           <Button
             title="Continue to App"
             variant="primary"
-            onPress={() => router.replace('/home')}
+            onPress={() => router.replace('/(main)/home')} // Ensure correct home route
           />
         </View>
       </Container>
@@ -127,8 +133,8 @@ export default function Paywall() {
   if (subscriptionLoading || usageLoading) {
     return (
       <Container withSafeArea>
-        <AppBar 
-          title="Premium Subscription" 
+        <AppBar
+          title="Premium Subscription"
           showBackButton
           onBackPress={handleGoBack}
         />
@@ -140,28 +146,34 @@ export default function Paywall() {
     );
   }
 
-  // Error state
-  if (subscriptionError || usageError) {
-    const errorMessage = subscriptionError instanceof Error 
-      ? subscriptionError.message 
-      : usageError instanceof Error 
-        ? usageError.message 
-        : 'Failed to load subscription details';
+  // Error state - Combine errors from both hooks
+  const combinedError = subscriptionError || usageError;
+  if (combinedError) {
+    // Display the error string directly
+    const errorMessage = combinedError || 'Failed to load subscription details';
 
     return (
       <Container withSafeArea>
-        <AppBar 
-          title="Premium Subscription" 
+        <AppBar
+          title="Premium Subscription"
           showBackButton
           onBackPress={handleGoBack}
         />
         <View style={localStyles.errorContainer}>
-          <Ionicons name="alert-circle" size={48} color={colors.error} />
-          <Text style={localStyles.errorText}>{errorMessage}</Text>
+          <Ionicons name="alert-circle-outline" size={48} color={colors.error} />
+          <Text style={localStyles.errorText}>{errorMessage instanceof Error ? errorMessage.message : errorMessage}</Text>
           <Button
             title="Try Again"
             variant="primary"
-            onPress={() => router.replace('/paywall')}
+            // Reload the paywall route itself to retry initialization
+            onPress={() => router.replace('/(main)/paywall')}
+            style={localStyles.retryButton} // Added style
+          />
+           <Button
+            title="Go Back"
+            variant="outline"
+            onPress={handleGoBack}
+            style={localStyles.goBackButton} // Added style
           />
         </View>
       </Container>
@@ -182,24 +194,25 @@ export default function Paywall() {
 
   return (
     <Container withSafeArea>
-      <AppBar 
-        title="Premium Subscription" 
+      <AppBar
+        title="Premium Subscription"
         showBackButton
         onBackPress={handleGoBack}
       />
-      
-      <ScrollView style={localStyles.scrollView}>
+
+      <ScrollView style={localStyles.scrollView} contentContainerStyle={localStyles.scrollContent}>
         {/* Hero section */}
         <View style={localStyles.heroSection}>
           <View style={localStyles.heroIconContainer}>
-            <Ionicons name="star" size={80} color="#FFD700" />
+            {/* Changed icon for better visual */}
+            <Ionicons name="diamond-outline" size={80} color={colors.primary} />
           </View>
           <Text style={localStyles.heroTitle}>Upgrade to Premium</Text>
           <Text style={localStyles.heroSubtitle}>
             Unlock unlimited conversations and premium features
           </Text>
         </View>
-        
+
         {/* Usage stats */}
         <Card style={localStyles.usageCard}>
           <View style={localStyles.usageStatsContainer}>
@@ -213,7 +226,7 @@ export default function Paywall() {
                   : (usageData ? `${usageData.currentUsage}/${usageData.limit}` : '0/0')}
               </Text>
             </View>
-            
+
             <View style={localStyles.usageStat}>
               <Text style={localStyles.usageStatLabel}>
                 {usageData?.isSubscribed ? 'Access' : 'Remaining'}
@@ -224,47 +237,47 @@ export default function Paywall() {
               ]}>
                 {usageData?.isSubscribed
                   ? 'Unlimited'
-                  : (usageData?.remainingConversations || 0)}
+                  : (usageData?.remainingConversations ?? 0)} {/* Use nullish coalescing */}
               </Text>
             </View>
           </View>
         </Card>
-        
+
         {/* Features section */}
         <View style={localStyles.featuresSection}>
           <Text style={localStyles.sectionTitle}>Premium Features</Text>
-          
+
           {renderFeatureItem(
-            "infinite", 
-            "Unlimited Conversations", 
+            "infinite-outline",
+            "Unlimited Conversations",
             "Create as many conversations as you need without monthly limits"
           )}
-          
+
           {renderFeatureItem(
-            "analytics", 
-            "Advanced Analysis", 
+            "analytics-outline",
+            "Advanced Analysis",
             "Get deeper insights with more detailed conversation analytics"
           )}
-          
+
           {renderFeatureItem(
-            "cloud-upload", 
-            "Cloud Storage", 
+            "cloud-upload-outline",
+            "Cloud Storage",
             "Save all your conversations and access them from any device"
           )}
-          
+
           {renderFeatureItem(
-            "sparkles", 
-            "Priority Support", 
+            "sparkles-outline",
+            "Priority Support",
             "Get faster responses and dedicated assistance when you need help"
           )}
         </View>
-        
+
         {/* Plans section */}
         <View style={localStyles.plansSection}>
           <Text style={localStyles.sectionTitle}>Choose Your Plan</Text>
-          
-          {subscriptionProducts.length === 0 ? (
-            <ActivityIndicator size="large" color={colors.primary} style={localStyles.loader} />
+
+          {subscriptionProducts.length === 0 && !subscriptionLoading ? (
+             <Text style={localStyles.noProductsText}>Subscription plans not available at the moment. Please try again later.</Text>
           ) : (
             subscriptionProducts.map((product) => (
               <TouchableOpacity
@@ -274,18 +287,20 @@ export default function Paywall() {
                   selectedPlan === product.productId && localStyles.selectedPlan
                 ]}
                 onPress={() => setSelectedPlan(product.productId)}
+                disabled={isPurchasing || isRestoring} // Disable selection during actions
               >
                 {product.productId === SUBSCRIPTION_SKUS.YEARLY && (
                   <View style={localStyles.bestValueBadge}>
                     <Text style={localStyles.bestValueText}>BEST VALUE</Text>
                   </View>
                 )}
-                
+
                 <View style={localStyles.planHeader}>
                   <Text style={localStyles.planTitle}>
-                    {product.title.replace('(VibeCheck)', '')}
+                    {/* Basic cleanup of common IAP title additions */}
+                    {product.title.replace(/\(.*\)/, '').trim()}
                   </Text>
-                  
+
                   <View style={localStyles.priceContainer}>
                     <Text style={localStyles.priceText}>{product.price}</Text>
                     <Text style={localStyles.periodText}>
@@ -293,38 +308,42 @@ export default function Paywall() {
                     </Text>
                   </View>
                 </View>
-                
-                <Text style={localStyles.planDescription}>{product.description}</Text>
-                
-                <View style={[
-                  localStyles.radioButton,
-                  selectedPlan === product.productId && localStyles.radioButtonSelected
-                ]} />
+
+                {/* Use description if available, otherwise generate one */}
+                <Text style={localStyles.planDescription}>
+                    {product.description || (product.productId === SUBSCRIPTION_SKUS.MONTHLY ? 'Billed monthly' : 'Billed annually')}
+                </Text>
+
+                {/* Radio button visual */}
+                 <View style={localStyles.radioOuter}>
+                    {selectedPlan === product.productId && <View style={localStyles.radioInner} />}
+                 </View>
               </TouchableOpacity>
             ))
           )}
         </View>
-        
+
         {/* Action buttons */}
         <View style={localStyles.actionsContainer}>
           <Button
             title="Subscribe Now"
             variant="primary"
+            size="large" // Make main button larger
             onPress={handlePurchase}
-            disabled={!selectedPlan || isPurchasing}
+            disabled={!selectedPlan || isPurchasing || isRestoring || subscriptionProducts.length === 0}
             loading={isPurchasing}
           />
-          
+
           <Button
             title="Restore Purchases"
             variant="outline"
             onPress={handleRestore}
-            disabled={isRestoring}
+            disabled={isRestoring || isPurchasing}
             loading={isRestoring}
             style={localStyles.restoreButton}
           />
         </View>
-        
+
         <Text style={localStyles.disclaimer}>
           Payment will be charged to your {Platform.OS === 'ios' ? 'Apple ID' : 'Google Play'} account
           at confirmation of purchase. Subscription automatically renews unless auto-renew is turned off
@@ -337,15 +356,19 @@ export default function Paywall() {
   );
 }
 
+// Renamed styles to avoid conflicts if imported elsewhere
 const localStyles = StyleSheet.create({
   scrollView: {
     flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: spacing.xl, // Ensure space at the bottom
   },
   successContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: spacing.lg,
+    padding: spacing.xl, // Increased padding
   },
   successIconContainer: {
     marginBottom: spacing.lg,
@@ -354,15 +377,20 @@ const localStyles = StyleSheet.create({
     ...typography.heading1,
     marginBottom: spacing.md,
     textAlign: 'center',
+    color: colors.text.primary,
   },
   successMessage: {
     ...typography.body1,
     textAlign: 'center',
     marginBottom: spacing.xl,
+    color: colors.text.secondary,
+    lineHeight: 24,
   },
   heroSection: {
     alignItems: 'center',
-    padding: spacing.lg,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: colors.primaryLight, // Light background for hero
   },
   heroIconContainer: {
     marginBottom: spacing.md,
@@ -371,6 +399,7 @@ const localStyles = StyleSheet.create({
     ...typography.heading1,
     marginBottom: spacing.sm,
     textAlign: 'center',
+    color: colors.primaryDark,
   },
   heroSubtitle: {
     ...typography.body1,
@@ -378,12 +407,14 @@ const localStyles = StyleSheet.create({
     color: colors.text.secondary,
   },
   usageCard: {
-    margin: spacing.lg,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.lg, // Add top margin
+    marginBottom: spacing.lg,
   },
   usageStatsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    padding: spacing.md,
+    paddingVertical: spacing.md, // Adjusted padding
   },
   usageStat: {
     alignItems: 'center',
@@ -392,29 +423,38 @@ const localStyles = StyleSheet.create({
     ...typography.caption,
     color: colors.text.secondary,
     marginBottom: spacing.xs,
+    textTransform: 'uppercase', // Make labels stand out
   },
   usageStatValue: {
     ...typography.heading2,
+    color: colors.text.primary,
   },
   usageStatValueZero: {
     color: colors.error,
   },
   featuresSection: {
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg, // Add vertical padding
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.lg,
   },
   sectionTitle: {
     ...typography.heading2,
     marginBottom: spacing.lg,
+    textAlign: 'center', // Center section titles
+    color: colors.text.primary,
   },
   featureItem: {
     flexDirection: 'row',
-    marginBottom: spacing.md,
-    alignItems: 'flex-start',
+    marginBottom: spacing.lg, // Increased spacing
+    alignItems: 'center', // Center items vertically
   },
   featureIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44, // Slightly larger icon background
+    height: 44,
+    borderRadius: 22,
     backgroundColor: colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
@@ -424,18 +464,26 @@ const localStyles = StyleSheet.create({
     flex: 1,
   },
   featureTitle: {
-    ...typography.heading3,
+    ...typography.heading3, // Use heading 3 for feature titles
+    fontSize: 18, // Adjust size
     marginBottom: spacing.xs,
+    color: colors.text.primary,
   },
   featureDescription: {
     ...typography.body2,
     color: colors.text.secondary,
+    lineHeight: 20,
   },
   plansSection: {
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg, // Add bottom padding
   },
-  loader: {
+  noProductsText: {
+    ...typography.body1,
+    color: colors.text.secondary,
+    textAlign: 'center',
     marginVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
   },
   planCard: {
     backgroundColor: colors.surface,
@@ -443,31 +491,41 @@ const localStyles = StyleSheet.create({
     padding: spacing.lg,
     marginBottom: spacing.md,
     borderWidth: 2,
-    borderColor: 'transparent',
+    borderColor: colors.border, // Default border
+    flexDirection: 'row', // Align items horizontally
+    alignItems: 'center', // Center items vertically
+    position: 'relative', // For badge positioning
   },
   selectedPlan: {
     borderColor: colors.primary,
+    backgroundColor: colors.primaryLight, // Highlight selected plan background
   },
   bestValueBadge: {
     position: 'absolute',
-    top: -12,
+    top: -10, // Adjust position
     right: spacing.md,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.accent, // Use accent color
     paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    paddingVertical: 2, // Adjust padding
     borderRadius: 12,
+    zIndex: 1, // Ensure badge is on top
   },
   bestValueText: {
     ...typography.caption,
-    color: '#FFFFFF',
+    fontSize: 10, // Smaller badge text
+    color: colors.text.inverse,
     fontWeight: 'bold',
+    textTransform: 'uppercase',
   },
   planHeader: {
-    marginBottom: spacing.md,
+    flex: 1, // Allow header to take available space
+    marginRight: spacing.lg, // Space before radio button
   },
   planTitle: {
     ...typography.heading3,
+    fontSize: 18, // Adjust size
     marginBottom: spacing.xs,
+    color: colors.text.primary,
   },
   priceContainer: {
     flexDirection: 'row',
@@ -475,7 +533,9 @@ const localStyles = StyleSheet.create({
   },
   priceText: {
     ...typography.heading2,
+    fontSize: 20, // Adjust size
     color: colors.primary,
+    fontWeight: 'bold',
   },
   periodText: {
     ...typography.body2,
@@ -485,21 +545,28 @@ const localStyles = StyleSheet.create({
   planDescription: {
     ...typography.body2,
     color: colors.text.secondary,
-    marginBottom: spacing.md,
+    marginTop: spacing.sm, // Add margin top
   },
-  radioButton: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: colors.border,
+  radioOuter: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      borderWidth: 2,
+      borderColor: colors.borderActive,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginLeft: 'auto', // Push radio to the right
   },
-  radioButtonSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primary,
+  radioInner: {
+      width: 12,
+      height: 12,
+      borderRadius: 6,
+      backgroundColor: colors.primary,
   },
   actionsContainer: {
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg, // Add top padding
+    paddingBottom: spacing.md,
   },
   restoreButton: {
     marginTop: spacing.md,
@@ -510,6 +577,7 @@ const localStyles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xl,
+    lineHeight: 18,
   },
   loadingContainer: {
     flex: 1,
@@ -526,12 +594,20 @@ const localStyles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: spacing.lg,
+    padding: spacing.xl, // Increased padding
   },
   errorText: {
     ...typography.body1,
     color: colors.error,
     textAlign: 'center',
     marginVertical: spacing.lg,
+    lineHeight: 22,
+  },
+  retryButton: {
+      minWidth: 150, // Make buttons wider
+      marginBottom: spacing.md, // Space between buttons
+  },
+  goBackButton: {
+      minWidth: 150,
   },
 });

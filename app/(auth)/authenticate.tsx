@@ -1,3 +1,4 @@
+// /Users/adimov/Developer/final/vibe/app/(auth)/authenticate.tsx
 import { ErrorMessage } from '@/components/feedback/ErrorMessage';
 import { AppleAuthButton } from '@/components/forms/AppleAuthButton';
 import { Container } from '@/components/layout/Container';
@@ -7,21 +8,21 @@ import { storeAuthTokens } from '@/utils/auth';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
-interface AppleAuthResponse {
-  data: {
-    user: {
-      id: string;
+// Updated backend response structure expectation
+interface BackendAuthResponse {
+    success: boolean;
+    data?: {
+        user: { id: string };
+        sessionToken?: string; // Expect a session token from the backend
     };
-  };
-  error?: {
-    code: string;
-    message: string;
-  };
+    error?: string;
+    code?: string;
 }
+
 
 export default function Authenticate() {
   const router = useRouter();
@@ -39,68 +40,69 @@ export default function Authenticate() {
     try {
       setIsLoading(true);
       setError(null);
+      console.log('[Authenticate] Starting Apple backend authentication...');
 
       // Call backend API to authenticate with Apple
       const response = await fetch(`${API_URL}/users/apple-auth`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          // Send the Apple identityToken for backend validation
           'Authorization': `Bearer ${identityToken}`,
         },
         body: JSON.stringify({
-          identityToken,
+          // Send necessary user details obtained from Apple
+          identityToken, // May be redundant if already in header, check backend requirements
           email: userData.email,
           fullName: userData.fullName,
         }),
       });
 
-      // Explicitly type the expected response structure
-      interface BackendAuthResponse {
-          success: boolean;
-          data?: { user: { id: string } };
-          error?: string;
-          code?: string; // Added for the new error code
-      }
-
-      const result = await response.json() as BackendAuthResponse; // Use the interface
+      const result = await response.json() as BackendAuthResponse;
 
       if (!response.ok || !result.success) {
           // Check for the specific EMAIL_ALREADY_EXISTS code
           if (result.code === 'EMAIL_ALREADY_EXISTS') {
               const specificMessage = result.error || "This email is already linked to another account.";
-              console.warn(`[AppleAuth] Email conflict: ${specificMessage}`);
-              setError(specificMessage); 
+              console.warn(`[Authenticate] Email conflict: ${specificMessage}`);
+              setError(specificMessage);
               showToast.error('Authentication Failed', specificMessage);
           } else {
               // Handle other errors
-              const errorMessage = result.error || 'Authentication failed on backend';
-              console.error(`[AppleAuth] Backend auth failed: ${errorMessage}`);
+              const errorMessage = result.error || `Authentication failed on backend (Status: ${response.status})`;
+              console.error(`[Authenticate] Backend auth failed: ${errorMessage}`);
               throw new Error(errorMessage);
           }
           setIsLoading(false);
           return; // Stop execution after handling error
       }
 
-      // Ensure user ID exists on success
+      // Ensure user ID and SESSION TOKEN exist on success
       const userId = result.data?.user?.id;
-      if (!userId) {
-          console.error('[AppleAuth] Backend success response missing user ID.', result);
-          throw new Error('Authentication succeeded but user ID was missing.');
-      }
+      const sessionToken = result.data?.sessionToken; // Get the session token
 
-      // Store authentication data using the utility function
+      if (!userId || !sessionToken) {
+          console.error('[Authenticate] Backend success response missing user ID or session token.', result);
+          throw new Error('Authentication succeeded but essential data was missing.');
+      }
+      console.log(`[Authenticate] Backend auth successful. UserID: ${userId}, SessionToken received.`);
+
+      // Store authentication data including the SESSION TOKEN
       await storeAuthTokens({
-        identityToken,
-        userId: userId, // Use validated userId
+        // identityToken, // Store identity token optionally, session token is primary now
+        sessionToken: sessionToken, // Store the session token
+        userId: userId,
         email: userData.email ?? undefined,
         fullName: userData.fullName ?? undefined,
       });
+      console.log('[Authenticate] Auth tokens (including session token) stored.');
 
       // Handle successful authentication
       showToast.success('Success', 'Authentication successful');
       router.replace('/(main)/home');
+
     } catch (err) {
-      console.error('Apple authentication error:', err);
+      console.error('[Authenticate] Apple authentication process error:', err);
       const errorMessage = err instanceof Error ? err.message : 'Authentication failed';
       setError(errorMessage);
       showToast.error('Error', errorMessage);
@@ -110,11 +112,14 @@ export default function Authenticate() {
   };
 
   const handleAppleAuthError = (err: Error) => {
-    if (err.message !== 'The operation was canceled.') {
-      console.error('Apple authentication error:', err);
-      setError(err.message);
-      showToast.error('Error', err.message);
+    // Ignore user cancellation
+    if (err.message.includes('ERR_REQUEST_CANCELED') || err.message.includes('canceled')) {
+        console.log('[Authenticate] Apple sign-in was canceled by the user.');
+        return;
     }
+    console.error('[Authenticate] Apple Authentication Library Error:', err);
+    setError(err.message || 'An error occurred during Apple Sign-In.');
+    showToast.error('Apple Sign-In Error', err.message || 'An unknown error occurred.');
   };
 
   return (
@@ -124,7 +129,14 @@ export default function Authenticate() {
         <Text style={styles.appName}>VibeCheck</Text>
       </View>
 
-      {error && <ErrorMessage message={error} />}
+      {isLoading && (
+          <View style={styles.loadingOverlay}>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text style={styles.loadingText}>Authenticating...</Text>
+          </View>
+      )}
+
+      {error && !isLoading && <ErrorMessage message={error} />}
 
       <View style={styles.authContainer}>
         <AppleAuthButton
@@ -179,5 +191,17 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  loadingText: {
+    marginTop: spacing.md,
+    ...typography.body1,
+    color: colors.text.secondary,
   },
 });

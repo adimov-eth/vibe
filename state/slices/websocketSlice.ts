@@ -1,495 +1,457 @@
-// state/slices/websocketSlice.ts
+// /Users/adimov/Developer/final/vibe/state/slices/websocketSlice.ts
 import { getAuthTokens } from '@/utils/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Draft } from 'immer'; // Import Draft type for casting
 import { StateCreator } from 'zustand';
-import { immer } from 'zustand/middleware/immer';
-import { ConversationResult, StoreState, WS_URL, WebSocketMessage } from '../types';
+import { StoreState, WS_URL, WebSocketMessage, WebSocketSlice } from '../types';
 
-const MAX_WS_MESSAGES = 100; // Keep the last 100 messages
+const MAX_WS_MESSAGES = 50;
+const CONNECTION_TIMEOUT_MS = 15000;
+const WEBSOCKET_SUBSCRIPTIONS_KEY = 'websocket_subscriptions';
 
-interface WebSocketState {
-  socket: WebSocket | null;
-  wsMessages: WebSocketMessage[];
-  conversationResults: { [key: string]: ConversationResult };
-  reconnectAttempts: number;
-  maxReconnectAttempts: number;
-  reconnectInterval: number;
-  maxReconnectDelay: number;
-  isConnecting: boolean;
-}
-
+// Define the WebSocketActions interface separately first
 interface WebSocketActions {
   calculateBackoff: () => number;
   connectWebSocket: () => Promise<void>;
+  disconnectWebSocket: (code?: number, reason?: string) => void;
   subscribeToConversation: (conversationId: string) => Promise<void>;
   unsubscribeFromConversation: (conversationId: string) => Promise<void>;
   clearMessages: () => void;
   getConversationResultError: (conversationId: string) => string | null;
-  // Optional: Add a prune action if more complex logic is needed later
-  // pruneMessages: (criteria: PruningCriteria) => void;
 }
 
-export type WebSocketSlice = WebSocketState & WebSocketActions;
-
-const initialState: WebSocketState = {
-  socket: null,
-  wsMessages: [],
-  conversationResults: {},
-  reconnectAttempts: 0,
-  maxReconnectAttempts: 5, // Keep trying after 5, just with max delay
-  reconnectInterval: 1000, // Initial delay 1s
-  maxReconnectDelay: 30000, // Max delay 30s
-  isConnecting: false,
-};
-
+// Keep the StateCreator signature simple, assuming middleware is external
 export const createWebSocketSlice: StateCreator<
   StoreState,
   [],
-  [['zustand/immer', never]],
+  [],
   WebSocketSlice
-> = immer((set, get) => ({
-  ...initialState,
+> = (setUntyped, get) => {
 
-  getConversationResultError: (conversationId: string): string | null => {
-    // Selector function to get error from the results map
-    return get().conversationResults[conversationId]?.error || null;
-  },
+  // --- Explicitly cast `set` to the Immer-wrapped signature ---
+  // This tells TypeScript how `set` behaves *after* Immer has wrapped it.
+  const set = setUntyped as (fn: (draft: Draft<StoreState>) => void) => void;
+  // --- End of cast ---
 
-  calculateBackoff: () => {
-    const state = get();
-    // Exponential backoff with jitter
-    const exponentialDelay = Math.min(
-      Math.pow(2, state.reconnectAttempts) * state.reconnectInterval,
-      state.maxReconnectDelay
-    );
-    // Jitter: +/- 10% of the delay
-    const jitter = exponentialDelay * 0.2 * (Math.random() - 0.5);
-    return Math.floor(exponentialDelay + jitter);
-  },
+  const initialState: Omit<WebSocketSlice, keyof WebSocketActions> = {
+      socket: null,
+      wsMessages: [],
+      conversationResults: {},
+      reconnectAttempts: 0,
+      maxReconnectAttempts: 5,
+      reconnectInterval: 1000,
+      maxReconnectDelay: 30000,
+      isConnecting: false,
+      connectionPromise: null,
+  };
 
-  connectWebSocket: async () => {
-    const state = get();
-    // Prevent multiple concurrent connection attempts
-    if (state.isConnecting || state.socket?.readyState === WebSocket.CONNECTING) {
-      console.log('[WS Client] connectWebSocket: Connection attempt already in progress.');
-      return;
-    }
-    console.log('[WS Client] connectWebSocket: Starting connection attempt.');
+  // Define actions
+  const actions: WebSocketActions = {
+      getConversationResultError: (conversationId: string): string | null => {
+          return get().conversationResults[conversationId]?.error || null;
+      },
 
-    // Resetting attempts slightly differently:
-    // If max attempts reached, keep the attempt count high for max delay,
-    // but allow retries indefinitely.
-    if (state.reconnectAttempts > state.maxReconnectAttempts) {
-        console.log(`Max reconnect attempts exceeded, continuing with max delay (${state.maxReconnectDelay}ms).`);
-        // Keep reconnectAttempts high to maintain max backoff
-    }
-
-    set((state) => {
-      state.isConnecting = true;
-    });
-
-    try {
-      const tokens = await getAuthTokens();
-      const token = tokens.identityToken;
-
-      if (!token) {
-           console.error("[WS Client] connectWebSocket: No identity token found. Cannot authenticate WebSocket.");
-           set(state => { state.isConnecting = false; });
-           return;
-      }
-      console.log(`[WS Client] connectWebSocket: Using identity token starting with ${token.substring(0, 8)}...`);
-
-      // Ensure previous socket is cleaned up
-      const existingSocket = state.socket;
-      if (existingSocket && existingSocket.readyState !== WebSocket.CLOSED) {
-        console.log("Closing existing WebSocket before reconnecting.");
-        // Remove listeners before closing to avoid triggering reconnect logic unnecessarily
-        existingSocket.onopen = null;
-        existingSocket.onmessage = null;
-        existingSocket.onerror = null;
-        existingSocket.onclose = null;
-        existingSocket.close(1000, 'Client initiated reconnect');
-        set((state) => { state.socket = null; });
-        // Short delay to allow the close event to potentially propagate if needed
-        await new Promise(resolve => setTimeout(resolve, 50));
-      }
-
-      const connectionUrl = WS_URL;
-      console.log('[WS Client] connectWebSocket: Attempting to connect to:', connectionUrl);
-      const ws = new WebSocket(connectionUrl);
-      let connectionTimeout: NodeJS.Timeout | null = null;
-
-      // Set socket immediately
-      set((state) => { state.socket = ws; });
-      console.log('[WS Client] connectWebSocket: WebSocket instance created.');
-
-      ws.onopen = async () => {
-        if (connectionTimeout) clearTimeout(connectionTimeout);
-        console.log('[WS Client] WebSocket Event: onopen - Connected');
-
-        set((state) => {
-          state.reconnectAttempts = 0;
-          state.isConnecting = false;
-        });
-
-        // Send authentication message
-        try {
-           const authMessage = JSON.stringify({ type: 'auth', token: token });
-           console.log('[WS Client] WebSocket Event: onopen - Sending authentication message...');
-          ws.send(authMessage);
-           console.log('[WS Client] WebSocket Event: onopen - Authentication message sent.');
-        } catch (sendError) {
-           console.error('[WS Client] WebSocket Event: onopen - Failed to send auth message:', sendError);
-           ws.close(4001, 'Failed to send auth');
-           return;
-        }
-
-        // Restore subscriptions
-        try {
-          const storedTopics = await AsyncStorage.getItem('websocket_subscriptions');
-           console.log(`[WS Client] WebSocket Event: onopen - Checking stored subscriptions: ${storedTopics ? 'Found' : 'None found'}`);
-          if (storedTopics) {
-            const topics = JSON.parse(storedTopics) as string[];
-            console.log(`Restoring ${topics.length} subscriptions...`);
-            topics.forEach(topic => {
-              // Extract conversationId - adjust if topic format changes
-              const conversationId = topic.startsWith('conversation:') ? topic.split(':')[1] : null;
-              if (conversationId) {
-                // Use the slice's internal method to resubscribe
-                get().subscribeToConversation(conversationId);
-              } else {
-                 console.warn(`Skipping restoration of invalid topic format: ${topic}`);
-              }
-            });
-          }
-        } catch (e: unknown) {
-          console.error('[WS Client] WebSocket Event: onopen - Error restoring subscriptions:', e instanceof Error ? e.message : e);
-        }
-      };
-
-      ws.onmessage = (event) => {
-         console.log('[WS Client] WebSocket Event: onmessage - Received data.');
-        try {
-          const message = JSON.parse(event.data) as WebSocketMessage;
-          const messageType = message.type;
-
-           console.log(`[WS Client] WebSocket Event: onmessage - Parsed message type: ${messageType}`);
-
-          if (__DEV__) {
-              if (!['pong'].includes(messageType)) {
-                  console.log('[WS Client] WebSocket Event: onmessage - Message Payload:', JSON.stringify(message, null, 2));
-              }
-          }
-
-          // --- Process and Update Conversation Results State --- 
-          set((state) => {
-            let conversationId: string | undefined = undefined;
-
-            // Extract conversationId based on message type
-            if (message.type === 'transcript' || message.type === 'analysis' || message.type === 'status' || message.type === 'audio') {
-              conversationId = message.payload.conversationId;
-            } else if (message.type === 'error' && message.payload.conversationId) {
-              conversationId = message.payload.conversationId;
-            }
-            
-            // If the message is relevant to a specific conversation
-            if (conversationId) {
-               // Initialize result if it doesn't exist
-               if (!state.conversationResults[conversationId]) {
-                 state.conversationResults[conversationId] = { status: 'processing', progress: 0 };
-               }
-               const currentResult = state.conversationResults[conversationId];
-
-               // Update based on message type
-               switch (message.type) {
-                 case 'transcript':
-                   currentResult.transcript = message.payload.content;
-                   currentResult.progress = Math.max(currentResult.progress, 50); // Example progress
-                   break;
-                 case 'analysis':
-                   currentResult.analysis = message.payload.content;
-                   currentResult.progress = 100;
-                   currentResult.status = 'completed'; // Analysis implies completion
-                   break;
-                 case 'status':
-                   if (message.payload.status === 'conversation_completed' || message.payload.status === 'completed') {
-                     currentResult.status = 'completed';
-                     currentResult.progress = 100;
-                     if (message.payload.gptResponse) {
-                       currentResult.analysis = message.payload.gptResponse; // Populate analysis if provided
-                     }
-                     if (message.payload.error) { // Handle potential error within completed status
-                        currentResult.status = 'error'; 
-                        currentResult.error = message.payload.error;
-                     }
-                   } else if (message.payload.status === 'error') {
-                     currentResult.status = 'error';
-                     currentResult.error = message.payload.error || 'Unknown processing error';
-                     currentResult.progress = 100;
-                   } else {
-                      // Other intermediate statuses could update progress
-                      // currentResult.status = 'processing'; // Ensure status stays processing if not completed/error
-                   }
-                   break;
-                 case 'audio':
-                   if (message.payload.status === 'transcribed') {
-                     currentResult.progress = Math.max(currentResult.progress, 40); // Example progress
-                   } else if (message.payload.status === 'failed') {
-                     currentResult.status = 'error';
-                     currentResult.error = 'Audio processing failed';
-                     currentResult.progress = 100;
-                   }
-                   break;
-                  case 'error': // Handle general errors associated with a conversation ID
-                    currentResult.status = 'error';
-                    currentResult.error = message.payload.error || 'Unknown error';
-                    currentResult.progress = 100;
-                    break;
-               }
-            } else if (message.type === 'error') {
-              // Handle global errors (not tied to a specific conversationId)
-              console.error("[WS Client] Received global error:", message.payload.error);
-              // Optionally set a global error state in the store
-              // state.globalError = message.payload.error;
-            }
-
-            // Handle non-conversation-specific messages (auth, pong, etc.)
-            if (messageType === 'auth_success') {
-              console.log(`[WS Client] WebSocket Event: onmessage - Authentication successful. User ID: ${message.userId}`);
-            } else if (messageType === 'subscription_confirmed') {
-              console.log(`[WS Client] WebSocket Event: onmessage - Subscription confirmed for topic: ${message.payload.topic}`);
-            }
-            
-            // Keep limited raw message history (optional, could be removed)
-            state.wsMessages.push(message);
-            if (state.wsMessages.length > MAX_WS_MESSAGES) {
-              state.wsMessages = state.wsMessages.slice(-MAX_WS_MESSAGES);
-            }
-          });
-          // --- End Processing Logic ---
-
-        } catch (error) {
-          console.error('[WS Client] WebSocket Event: onmessage - Failed to parse or process message:', error, 'Raw data:', event.data);
-        }
-      };
-
-      ws.onclose = (event) => {
-        if (connectionTimeout) clearTimeout(connectionTimeout);
-        console.log(`[WS Client] WebSocket Event: onclose - Code ${event.code}, Reason: ${event.reason || 'No reason'}`);
-
-        // Avoid scheduling reconnect if this socket instance is already replaced
-        if (get().socket !== ws) {
-             console.log("Stale WebSocket closed event ignored.");
-             return;
-        }
-
-        let shouldReconnect = true;
-        let isAuthError = false;
-
-        switch (event.code) {
-            case 1000: // Normal closure
-            case 1001: // Going away
-                shouldReconnect = false;
-                console.log("WebSocket closed normally or going away. Won't automatically reconnect.");
-                break;
-            case 1008: // Policy violation (could be auth)
-            case 4001: // App-specific Auth Failed
-            case 4002: // Invalid Auth Message
-            case 4003: // Internal Auth Context Error
-            case 4008: // Auth Timeout
-                shouldReconnect = false; // Don't automatically reconnect on auth errors
-                isAuthError = true;
-                console.error(`Authentication related error (Code: ${event.code}). Reconnection stopped. Reason: ${event.reason}`);
-                // Consider notifying the user or triggering sign-out
-                break;
-             case 1006: // Abnormal closure
-                 console.warn("WebSocket closed abnormally (1006). Will attempt reconnect.");
-                 break;
-            default:
-                console.log(`WebSocket closed unexpectedly (Code: ${event.code}). Will attempt reconnect. Reason: ${event.reason}`);
-        }
-
-        set((state) => {
-          state.socket = null; // Clear the socket instance
-          state.isConnecting = false;
-          if (isAuthError) {
-             // Optionally add auth error state to the store
-             // state.authError = `Authentication failed (Code: ${event.code})`;
-          }
-        });
-
-        if (shouldReconnect) {
-          const reconnectDelay = get().calculateBackoff();
-          console.log(
-            `Attempting to reconnect WebSocket in ${Math.round(reconnectDelay / 1000)}s (attempt ${get().reconnectAttempts + 1})`
+      calculateBackoff: () => {
+          const state = get();
+          const exponentialDelay = Math.min(
+              Math.pow(2, state.reconnectAttempts) * state.reconnectInterval,
+              state.maxReconnectDelay
           );
-          setTimeout(() => {
-             // Check if still disconnected before attempting
-             if (!get().socket && !get().isConnecting) {
-                 set((state) => { state.reconnectAttempts += 1; });
-                 get().connectWebSocket();
-             } else {
-                  console.log("Reconnect cancelled: WebSocket is already connected or connecting.");
-             }
-          }, reconnectDelay);
-        }
-      };
+          const jitter = exponentialDelay * 0.2 * (Math.random() - 0.5);
+          return Math.max(state.reconnectInterval, Math.floor(exponentialDelay + jitter));
+      },
 
-      ws.onerror = (event: Event | { message?: string }) => {
-         if (connectionTimeout) clearTimeout(connectionTimeout);
-         // Try to get a message, otherwise log generic
-         const errorMessage = (event as { message?: string }).message || 'WebSocket Error Event occurred';
-         console.error(`[WS Client] WebSocket Event: onerror - ${errorMessage}`, event);
+      disconnectWebSocket: (code = 1000, reason = 'Client initiated disconnect') => {
+          const ws = get().socket;
+          console.log(`[WS Client] disconnectWebSocket: Closing connection (Code: ${code}, Reason: ${reason})`);
+          if (ws && ws.readyState !== WebSocket.CLOSING && ws.readyState !== WebSocket.CLOSED) {
+              ws.onopen = null;
+              ws.onmessage = null;
+              ws.onerror = null;
+              ws.onclose = null;
+              ws.close(code, reason);
+          }
+          // Use the correctly typed Immer `set`
+          set((state) => { // state is now correctly inferred as Draft<StoreState>
+              state.socket = null;
+              state.isConnecting = false;
+              state.reconnectAttempts = 0;
+              state.connectionPromise = null;
+          });
+      },
 
-         // Avoid scheduling reconnect if this socket instance is already replaced
-         if (get().socket !== ws) {
-             console.log("Stale WebSocket error event ignored.");
-             return;
-         }
+      connectWebSocket: async (): Promise<void> => {
+          const currentPromise = get().connectionPromise;
+          if (currentPromise) {
+              console.log('[WS Client] connectWebSocket: Connection attempt already in progress.');
+              await currentPromise;
+              return;
+          }
 
-         // Ensure the socket is closed after an error, triggering the onclose logic
-         if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-            ws.close(1011, "WebSocket error occurred"); // 1011: Internal Error
-         }
-         // The onclose handler will manage state updates and reconnection logic
-         set((state) => { state.isConnecting = false; });
-      };
+          let resolveConnectionPromise: () => void;
+          const newConnectionPromise = new Promise<void>((resolve) => {
+              resolveConnectionPromise = resolve;
+          });
 
-      // Connection Timeout handler
-      connectionTimeout = setTimeout(() => {
-        connectionTimeout = null;
-        if (ws.readyState === WebSocket.CONNECTING) {
-           console.warn('[WS Client] connectWebSocket: Connection timed out after 15s. Closing socket.');
-           ws.close(4008, 'Connection timeout');
-        }
-      }, 15000);
+          set(state => { state.connectionPromise = newConnectionPromise; });
 
-    } catch (error) {
-      console.error('[WS Client] connectWebSocket: Failed to initiate connection:', error);
-      set((state) => {
-        state.isConnecting = false;
-        // Ensure socket state is cleared on initial setup error
-        if (state.socket && state.socket.readyState !== WebSocket.CLOSED) {
-             state.socket.close(1011, "Initial connection setup error");
-        }
-        state.socket = null;
-      });
+          const connectLogic = async () => {
+              console.log('[WS Client] connectWebSocket: Starting connection logic.');
+              set(state => { state.isConnecting = true; });
 
-      // Schedule a reconnect attempt even if the initial setup fails
-      const backoffDelay = get().calculateBackoff();
-      console.log(`Scheduling reconnect after connection initiation error in ${Math.round(backoffDelay/1000)}s`);
-      setTimeout(() => {
-         // Check if still disconnected before attempting
-         if (!get().socket && !get().isConnecting) {
-             set((state) => { state.reconnectAttempts += 1; });
-             get().connectWebSocket();
-         } else {
-              console.log("Reconnect cancelled: WebSocket is already connected or connecting.");
-         }
-      }, backoffDelay);
-    }
-  },
+              const currentSocket = get().socket;
+              if (currentSocket && currentSocket.readyState === WebSocket.OPEN) {
+                  console.log('[WS Client] connectWebSocket: Already connected.');
+                  set(state => { state.isConnecting = false; });
+                  return;
+              }
 
-  subscribeToConversation: async (conversationId: string) => {
-     console.log(`[WS Client] subscribeToConversation: Requesting subscription for conversation: ${conversationId}`);
-    const state = get();
-    const socket = state.socket;
-    const topic = `conversation:${conversationId}`;
+              if (currentSocket && currentSocket.readyState !== WebSocket.CLOSED) {
+                  console.log("[WS Client] connectWebSocket: Closing existing socket before reconnecting.");
+                  currentSocket.onclose = null;
+                  currentSocket.close(1000, 'Client initiated reconnect');
+                  set(state => { state.socket = null; });
+                  await new Promise(resolve => setTimeout(resolve, 50));
+              }
 
-    // --- Manage stored subscriptions ---
-    try {
-      const storedTopics = await AsyncStorage.getItem('websocket_subscriptions');
-      let topics: string[] = storedTopics ? JSON.parse(storedTopics) : [];
-      if (!topics.includes(topic)) {
-        topics.push(topic);
-        await AsyncStorage.setItem('websocket_subscriptions', JSON.stringify(topics));
-        console.log(`[WS Client] subscribeToConversation: Stored subscription request for ${topic}`);
-      }
-    } catch (e: unknown) {
-      console.error('[WS Client] subscribeToConversation: Failed to store subscription request:', e instanceof Error ? e.message : e);
-    }
-    // --- End manage stored subscriptions ---
+              try {
+                  const tokens = await getAuthTokens();
+                  const token = tokens.sessionToken || tokens.identityToken;
 
-    if (socket?.readyState === WebSocket.OPEN) {
-      try {
-         const subscribeMessage = JSON.stringify({ type: 'subscribe', topic: topic });
-         console.log(`[WS Client] subscribeToConversation: Sending subscribe message for ${topic}`);
-        socket.send(subscribeMessage);
-         console.log(`[WS Client] subscribeToConversation: Subscribe message sent for ${topic}`);
-      } catch (e) {
-         console.error(`[WS Client] subscribeToConversation: Failed to send subscribe message for ${topic}:`, e);
-      }
-    } else {
-       // Map readyState number to string name
-       const readyStateMap: { [key: number]: string } = {
-         [WebSocket.CONNECTING]: 'CONNECTING',
-         [WebSocket.OPEN]: 'OPEN',
-         [WebSocket.CLOSING]: 'CLOSING',
-         [WebSocket.CLOSED]: 'CLOSED',
-       };
-       const socketState = socket ? (readyStateMap[socket.readyState] ?? 'UNKNOWN') : 'null';
-       console.log(`[WS Client] subscribeToConversation: Socket not open (state: ${socketState}). Subscription to ${topic} will be sent upon connection/reconnection.`);
-      if (!socket || socket.readyState === WebSocket.CLOSED) {
-         console.log("[WS Client] subscribeToConversation: Socket is closed, attempting to reconnect to send subscription.");
-         get().connectWebSocket();
-      }
-    }
-  },
+                  if (!token) {
+                      console.error("[WS Client] connectWebSocket: No session or identity token found. Cannot authenticate.");
+                      set(state => { state.isConnecting = false; });
+                      return;
+                  }
+                  console.log(`[WS Client] connectWebSocket: Using token (type: ${tokens.sessionToken ? 'session' : 'identity'})`);
 
-  unsubscribeFromConversation: async (conversationId: string) => {
-    const state = get();
-    const socket = state.socket;
-    const topic = `conversation:${conversationId}`;
+                  const connectionUrl = WS_URL;
+                  console.log('[WS Client] connectWebSocket: Attempting to connect to:', connectionUrl);
+                  const ws = new WebSocket(connectionUrl);
+                  let connectionTimeout: NodeJS.Timeout | null = null;
 
-    // --- Manage stored subscriptions ---
-    try {
-      const storedTopics = await AsyncStorage.getItem('websocket_subscriptions');
-      if (storedTopics) {
-        let topics: string[] = JSON.parse(storedTopics);
-        const initialLength = topics.length;
-        topics = topics.filter(t => t !== topic);
-        if (topics.length < initialLength) {
-             await AsyncStorage.setItem('websocket_subscriptions', JSON.stringify(topics));
-             console.log(`Removed stored subscription request for ${topic}`);
-        }
-      }
-    } catch (e: unknown) {
-      console.error('Failed to remove stored subscription request:', e instanceof Error ? e.message : e);
-    }
-     // --- End manage stored subscriptions ---
+                  set((state) => { state.socket = ws; });
+                  console.log('[WS Client] connectWebSocket: WebSocket instance created.');
 
-    if (socket?.readyState === WebSocket.OPEN) {
-      try {
-        socket.send(
-          JSON.stringify({
-            type: 'unsubscribe',
-            topic: topic,
-          })
-        );
-        console.log(`Sent unsubscribe request for ${topic}`);
-      } catch (e) {
-         console.error(`Failed to send unsubscribe message for ${topic}:`, e);
-      }
-    } else {
-       console.log(`Socket not open, cannot send unsubscribe for ${topic}. Stored request removed.`);
-    }
-  },
+                  ws.onopen = async () => {
+                      if (connectionTimeout) clearTimeout(connectionTimeout);
+                      console.log('[WS Client] WebSocket Event: onopen - Connected');
 
-  clearMessages: () => {
-    set((state) => {
-      state.wsMessages = [];
-    });
-    console.log("WebSocket message history cleared.");
-  },
+                      set((state) => {
+                          state.reconnectAttempts = 0;
+                          state.isConnecting = false;
+                      });
 
-  // Example of a more complex pruning action (optional)
-  // pruneMessages: (criteria) => {
-  //   set(state => {
-  //     state.wsMessages = state.wsMessages.filter(msg => {
-  //       // Apply criteria (e.g., age, type)
-  //       return true; // Replace with actual filtering logic
-  //     });
-  //   });
-  // },
+                      try {
+                          const authMessage = JSON.stringify({ type: 'auth', token: token });
+                          console.log('[WS Client] WebSocket Event: onopen - Sending authentication...');
+                          ws.send(authMessage);
+                          console.log('[WS Client] WebSocket Event: onopen - Authentication sent.');
+                      } catch (sendError) {
+                          console.error('[WS Client] WebSocket Event: onopen - Failed to send auth message:', sendError);
+                          actions.disconnectWebSocket(4001, 'Failed to send auth');
+                          return;
+                      }
 
-}));
+                      try {
+                          const storedTopics = await AsyncStorage.getItem(WEBSOCKET_SUBSCRIPTIONS_KEY);
+                          if (storedTopics) {
+                              const topics = JSON.parse(storedTopics) as string[];
+                              console.log(`[WS Client] WebSocket Event: onopen - Restoring ${topics.length} subscriptions...`);
+                              topics.forEach(topic => {
+                                  const conversationId = topic.startsWith('conversation:') ? topic.split(':')[1] : null;
+                                  if (conversationId) {
+                                      actions.subscribeToConversation(conversationId);
+                                  } else {
+                                      console.warn(`[WS Client] WebSocket Event: onopen - Skipping restoration of invalid topic: ${topic}`);
+                                  }
+                              });
+                          }
+                      } catch (e: unknown) {
+                          console.error('[WS Client] WebSocket Event: onopen - Error restoring subscriptions:', e instanceof Error ? e.message : e);
+                      }
+                  };
+
+                  ws.onmessage = (event) => {
+                      try {
+                          const message = JSON.parse(event.data) as WebSocketMessage;
+                          const messageType = message.type;
+
+                          set((state) => { // state is Draft<StoreState>
+                              let conversationId: string | undefined = undefined;
+                              if (message.type === 'transcript' || message.type === 'analysis' || message.type === 'status' || message.type === 'audio') {
+                                  conversationId = message.payload.conversationId;
+                              } else if (message.type === 'error' && message.payload.conversationId) {
+                                  conversationId = message.payload.conversationId;
+                              }
+
+                              if (conversationId) {
+                                  if (!state.conversationResults[conversationId]) {
+                                      state.conversationResults[conversationId] = { status: 'processing', progress: 0 };
+                                  }
+                                  const currentResult = state.conversationResults[conversationId];
+
+                                  switch (message.type) {
+                                      case 'transcript':
+                                          currentResult.transcript = message.payload.content;
+                                          currentResult.progress = Math.max(currentResult.progress || 0, 50);
+                                          break;
+                                      case 'analysis':
+                                          currentResult.analysis = message.payload.content;
+                                          currentResult.progress = 100;
+                                          currentResult.status = 'completed';
+                                          break;
+                                      case 'status':
+                                          if (message.payload.status === 'conversation_completed' || message.payload.status === 'completed') {
+                                              currentResult.status = 'completed';
+                                              currentResult.progress = 100;
+                                              if (message.payload.gptResponse) currentResult.analysis = message.payload.gptResponse;
+                                              if (message.payload.error) {
+                                                  currentResult.status = 'error';
+                                                  currentResult.error = message.payload.error;
+                                              }
+                                          } else if (message.payload.status === 'error') {
+                                              currentResult.status = 'error';
+                                              currentResult.error = message.payload.error || 'Unknown processing error';
+                                              currentResult.progress = 100;
+                                          } else {
+                                              if (typeof message.payload.progress === 'number') {
+                                                  currentResult.progress = Math.max(currentResult.progress || 0, message.payload.progress);
+                                              }
+                                              if (currentResult.status !== 'completed' && currentResult.status !== 'error') {
+                                                  currentResult.status = 'processing';
+                                              }
+                                          }
+                                          break;
+                                      case 'audio':
+                                          if (message.payload.status === 'transcribed') {
+                                              currentResult.progress = Math.max(currentResult.progress || 0, 40);
+                                          } else if (message.payload.status === 'failed') {
+                                              currentResult.status = 'error';
+                                              currentResult.error = message.payload.error || 'Audio processing failed';
+                                              currentResult.progress = 100;
+                                          }
+                                          break;
+                                      case 'error':
+                                          currentResult.status = 'error';
+                                          currentResult.error = message.payload.error || 'Unknown error';
+                                          currentResult.progress = 100;
+                                          break;
+                                  }
+                              } else if (message.type === 'error') {
+                                  console.error("[WS Client] Received global error:", message.payload.error);
+                              }
+
+                              if (messageType === 'auth_success') {
+                                  console.log(`[WS Client] WebSocket Event: onmessage - Authentication successful. User ID: ${message.userId}`);
+                              } else if (messageType === 'subscription_confirmed') {
+                                  console.log(`[WS Client] WebSocket Event: onmessage - Subscription confirmed for topic: ${message.payload.topic}`);
+                              }
+
+                              state.wsMessages.push(message);
+                              if (state.wsMessages.length > MAX_WS_MESSAGES) {
+                                  state.wsMessages = state.wsMessages.slice(-MAX_WS_MESSAGES);
+                              }
+                          });
+
+                      } catch (error) {
+                          console.error('[WS Client] WebSocket Event: onmessage - Failed to parse/process:', error, 'Raw:', event.data);
+                      }
+                  };
+
+                  ws.onclose = (event) => {
+                      if (connectionTimeout) clearTimeout(connectionTimeout);
+                      console.log(`[WS Client] WebSocket Event: onclose - Code ${event.code}, Reason: ${event.reason || 'No reason'}`);
+
+                      if (get().socket !== ws) {
+                          console.log("[WS Client] WebSocket Event: onclose - Stale event ignored.");
+                          return;
+                      }
+
+                      let shouldReconnect = true;
+                      let isAuthError = false;
+
+                      switch (event.code) {
+                          case 1000: case 1001:
+                              shouldReconnect = false;
+                              console.log("[WS Client] WebSocket Event: onclose - Normal closure.");
+                              break;
+                          case 1008: case 4001: case 4002: case 4003: case 4008:
+                              shouldReconnect = false;
+                              isAuthError = true;
+                              console.error(`[WS Client] WebSocket Event: onclose - Auth/Policy error (Code: ${event.code}). Reconnection stopped.`);
+                              break;
+                          case 1006:
+                              console.warn("[WS Client] WebSocket Event: onclose - Abnormal closure (1006). Will attempt reconnect.");
+                              break;
+                          default:
+                              console.log(`[WS Client] WebSocket Event: onclose - Unexpected (Code: ${event.code}). Will attempt reconnect.`);
+                      }
+
+                      set((state) => { // state is Draft<StoreState>
+                          state.socket = null;
+                          state.isConnecting = false;
+                          state.connectionPromise = null;
+                          if (!isAuthError && !shouldReconnect) {
+                              state.reconnectAttempts = 0;
+                          }
+                      });
+
+                      if (shouldReconnect && get().reconnectAttempts < get().maxReconnectAttempts) {
+                          const reconnectDelay = actions.calculateBackoff();
+                          console.log(`[WS Client] WebSocket Event: onclose - Scheduling reconnect in ${Math.round(reconnectDelay / 1000)}s (attempt ${get().reconnectAttempts + 1}/${get().maxReconnectAttempts})`);
+                          setTimeout(() => {
+                              if (!get().socket && !get().isConnecting) {
+                                  set((state) => { state.reconnectAttempts += 1; }); // Use Immer set
+                                  actions.connectWebSocket();
+                              } else {
+                                  console.log("[WS Client] Reconnect cancelled: Already connected/connecting.");
+                              }
+                          }, reconnectDelay);
+                      } else if (shouldReconnect) {
+                          console.warn(`[WS Client] WebSocket Event: onclose - Max reconnect attempts reached. Stopping automatic retries.`);
+                      }
+                  };
+
+                  ws.onerror = (event: Event | { message?: string }) => {
+                      if (connectionTimeout) clearTimeout(connectionTimeout);
+                      const errorMessage = (event as { message?: string }).message || 'WebSocket Error Event';
+                      console.error(`[WS Client] WebSocket Event: onerror - ${errorMessage}`, event);
+
+                      if (get().socket !== ws) {
+                          console.log("[WS Client] WebSocket Event: onerror - Stale event ignored.");
+                          return;
+                      }
+
+                      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+                          ws.close(1011, "WebSocket error occurred");
+                      }
+                      set((state) => { // state is Draft<StoreState>
+                          state.isConnecting = false;
+                          state.connectionPromise = null;
+                      });
+                  };
+
+                  connectionTimeout = setTimeout(() => {
+                      connectionTimeout = null;
+                      if (ws.readyState === WebSocket.CONNECTING) {
+                          console.warn(`[WS Client] connectWebSocket: Connection timed out. Closing socket.`);
+                          ws.close(4008, 'Connection timeout');
+                      }
+                  }, CONNECTION_TIMEOUT_MS);
+
+              } catch (error) {
+                  console.error('[WS Client] connectWebSocket: Failed to initiate connection:', error);
+                  set((state) => { // state is Draft<StoreState>
+                      state.isConnecting = false;
+                      state.connectionPromise = null;
+                      if (state.socket && state.socket.readyState !== WebSocket.CLOSED) {
+                          state.socket.close(1011, "Initial setup error");
+                      }
+                      state.socket = null;
+                  });
+
+                  if (get().reconnectAttempts < get().maxReconnectAttempts) {
+                      const backoffDelay = actions.calculateBackoff();
+                      console.log(`[WS Client] Scheduling reconnect after initiation error in ${Math.round(backoffDelay/1000)}s`);
+                      setTimeout(() => {
+                          if (!get().socket && !get().isConnecting) {
+                              set((state) => { state.reconnectAttempts += 1; }); // Use Immer set
+                              actions.connectWebSocket();
+                          } else {
+                              console.log("[WS Client] Reconnect cancelled: Already connected/connecting.");
+                          }
+                      }, backoffDelay);
+                  } else {
+                      console.warn(`[WS Client] Max reconnect attempts reached after initial failure.`);
+                  }
+              } finally {
+                  resolveConnectionPromise();
+              }
+          };
+
+          await connectLogic();
+      }, // End of connectWebSocket
+
+      subscribeToConversation: async (conversationId: string) => {
+          console.log(`[WS Client] subscribeToConversation: Requesting subscription for ${conversationId}`);
+          const state = get();
+          const socket = state.socket;
+          const topic = `conversation:${conversationId}`;
+
+          try {
+              const storedTopics = await AsyncStorage.getItem(WEBSOCKET_SUBSCRIPTIONS_KEY);
+              let topics: string[] = storedTopics ? JSON.parse(storedTopics) : [];
+              if (!topics.includes(topic)) {
+                  topics.push(topic);
+                  await AsyncStorage.setItem(WEBSOCKET_SUBSCRIPTIONS_KEY, JSON.stringify(topics));
+                  console.log(`[WS Client] subscribeToConversation: Stored request for ${topic}`);
+              }
+          } catch (e: unknown) {
+              console.error('[WS Client] subscribeToConversation: Failed to store request:', e instanceof Error ? e.message : e);
+          }
+
+          if (socket?.readyState === WebSocket.OPEN) {
+              try {
+                  const subscribeMessage = JSON.stringify({ type: 'subscribe', topic: topic });
+                  socket.send(subscribeMessage);
+                  console.log(`[WS Client] subscribeToConversation: Sent subscribe for ${topic}`);
+              } catch (e) {
+                  console.error(`[WS Client] subscribeToConversation: Failed to send subscribe for ${topic}:`, e);
+              }
+          } else {
+              const socketState = socket ? (WebSocket.CONNECTING === socket.readyState ? 'CONNECTING' : WebSocket.CLOSING === socket.readyState ? 'CLOSING' : WebSocket.CLOSED === socket.readyState ? 'CLOSED' : 'UNKNOWN') : 'null';
+              console.log(`[WS Client] subscribeToConversation: Socket not open (state: ${socketState}). Will send on connect.`);
+              if (!socket || socket.readyState === WebSocket.CLOSED) {
+                  console.log("[WS Client] subscribeToConversation: Socket closed, attempting reconnect.");
+                  actions.connectWebSocket();
+              }
+          }
+      }, // End of subscribeToConversation
+
+      unsubscribeFromConversation: async (conversationId: string) => {
+          const state = get();
+          const socket = state.socket;
+          const topic = `conversation:${conversationId}`;
+          console.log(`[WS Client] unsubscribeFromConversation: Requesting unsubscription for ${topic}`);
+
+          try {
+              const storedTopics = await AsyncStorage.getItem(WEBSOCKET_SUBSCRIPTIONS_KEY);
+              if (storedTopics) {
+                  let topics: string[] = JSON.parse(storedTopics);
+                  const initialLength = topics.length;
+                  topics = topics.filter(t => t !== topic);
+                  if (topics.length < initialLength) {
+                      await AsyncStorage.setItem(WEBSOCKET_SUBSCRIPTIONS_KEY, JSON.stringify(topics));
+                      console.log(`[WS Client] unsubscribeFromConversation: Removed stored request for ${topic}`);
+                  }
+              }
+          } catch (e: unknown) {
+              console.error('[WS Client] unsubscribeFromConversation: Failed to remove stored request:', e instanceof Error ? e.message : e);
+          }
+
+          if (socket?.readyState === WebSocket.OPEN) {
+              try {
+                  socket.send(JSON.stringify({ type: 'unsubscribe', topic: topic }));
+                  console.log(`[WS Client] unsubscribeFromConversation: Sent unsubscribe for ${topic}`);
+              } catch (e) {
+                  console.error(`[WS Client] unsubscribeFromConversation: Failed to send unsubscribe for ${topic}:`, e);
+              }
+          } else {
+              console.log(`[WS Client] unsubscribeFromConversation: Socket not open. Stored request removed.`);
+          }
+      }, // End of unsubscribeFromConversation
+
+      clearMessages: () => {
+          set((state) => { // state is Draft<StoreState>
+              state.wsMessages = [];
+          });
+          console.log("[WS Client] WebSocket message history cleared.");
+      }, // End of clearMessages
+  }; // End of actions object
+
+  return {
+      ...initialState,
+      ...actions,
+  };
+};

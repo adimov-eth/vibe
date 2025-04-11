@@ -1,3 +1,4 @@
+// /Users/adimov/Developer/final/vibe/app/(main)/home/index.tsx
 import { ModeCard } from '@/components/conversation/ModeCard';
 import { AppBar } from '@/components/layout/AppBar';
 import { Container } from '@/components/layout/Container';
@@ -38,10 +39,10 @@ const CONVERSATION_MODES = [
 
 export default function Home() {
   const router = useRouter();
-  const { 
+  const {
     usageStats,
     loading,
-    error,
+    error, // error is string | null
     checkCanCreateConversation,
     loadData
   } = useUsage();
@@ -59,7 +60,9 @@ export default function Home() {
   const handleSelectMode = async (mode: typeof CONVERSATION_MODES[0]) => {
     const canCreate = await checkCanCreateConversation();
     if (canCreate) {
-      router.push(`/recording/${mode.id}`);
+      // Changed navigation target to mode details screen first
+      router.push(`/home/${mode.id}`);
+      // Original direct navigation: router.push(`/recording/${mode.id}`);
     }
   };
 
@@ -82,9 +85,10 @@ export default function Home() {
       <Container withSafeArea>
         <AppBar title="VibeCheck" />
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error.message || 'Failed to load subscription data'}</Text>
-          <Button 
-            title="Retry" 
+          {/* Display the error string directly */}
+          <Text style={styles.errorText}>{error || 'Failed to load subscription data'}</Text>
+          <Button
+            title="Retry"
             variant="primary"
             onPress={loadData}
             style={styles.retryButton}
@@ -97,8 +101,8 @@ export default function Home() {
   return (
     <Container withSafeArea>
       <AppBar title="VibeCheck" />
-      
-      <ScrollView 
+
+      <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
@@ -106,22 +110,23 @@ export default function Home() {
             refreshing={loading}
             onRefresh={loadData}
             colors={[colors.primary]}
+            tintColor={colors.primary} // Added for iOS consistency
           />
         }
       >
-        
+
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Choose a Mode</Text>
-            <Text style={styles.sectionSubtitle}>Select the type of conversation you want to have</Text>
+            <Text style={styles.sectionSubtitle}>Select the type of conversation you want to analyze</Text>
           </View>
-          
+
           <View style={styles.modesContainer}>
             {CONVERSATION_MODES.map((mode, index) => (
               <ModeCard
                 key={mode.id}
                 id={mode.id}
-                mode={mode.id}
+                mode={mode.id} // Pass mode ID for icon lookup
                 title={mode.title}
                 description={mode.description}
                 color={mode.color}
@@ -139,8 +144,9 @@ export default function Home() {
 const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.section,
+    paddingTop: spacing.md, // Reduced top padding
     paddingBottom: spacing.section,
+    flexGrow: 1, // Ensure ScrollView content can grow
   },
   sectionContainer: {
     width: '100%',
@@ -152,6 +158,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     ...typography.heading3,
     marginBottom: spacing.xs,
+    color: colors.text.primary, // Ensure text color
   },
   sectionSubtitle: {
     ...typography.body2,
@@ -183,6 +190,7 @@ const styles = StyleSheet.create({
     ...typography.body1,
     color: colors.error,
     textAlign: 'center',
+    marginBottom: spacing.lg, // Added margin below text
   },
   retryButton: {
     marginTop: spacing.md,

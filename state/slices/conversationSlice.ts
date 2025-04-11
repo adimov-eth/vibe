@@ -1,8 +1,9 @@
-import { getAuthorizationHeader } from "@/utils/auth";
+// /Users/adimov/Developer/final/vibe/state/slices/conversationSlice.ts
+import { fetchWithAuth } from "@/utils/apiClient"; // Use the new API client
 import { StateCreator } from "zustand";
 import { Conversation, ConversationSlice, StoreState } from "../types";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL;
+// Removed: const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export const createConversationSlice: StateCreator<
   StoreState,
@@ -10,11 +11,7 @@ export const createConversationSlice: StateCreator<
   [],
   ConversationSlice
 > = (set, get) => {
-  const getAuthToken = async () => {
-    const authHeader = await getAuthorizationHeader();
-    if (!authHeader) throw new Error("No authentication token");
-    return authHeader;
-  };
+  // Removed: getAuthToken helper, now handled by fetchWithAuth
 
   return {
     conversations: {},
@@ -25,6 +22,7 @@ export const createConversationSlice: StateCreator<
         conversations: {},
         conversationLoading: {},
       }));
+      console.log("[ConversationSlice:clearConversations] Cleared conversations state.");
     },
 
     createConversation: async (
@@ -33,77 +31,69 @@ export const createConversationSlice: StateCreator<
       localConversationId: string
     ): Promise<string> => {
       console.log(`[ConversationSlice:createConversation] Creating conversation. LocalID=${localConversationId}, Mode=${mode}, Type=${recordingType}`);
-      const authHeader = await getAuthToken();
+      // No loading state set here, handled by the calling hook if needed
 
-      const response = await fetch(`${API_URL}/conversations`, {
-        method: "POST",
-        headers: {
-          Authorization: authHeader,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ mode, recordingType }),
-      });
+      try {
+        const data = await fetchWithAuth<{ conversation?: { id: string }, conversationId?: string }>( // Use fetchWithAuth
+          '/conversations',
+          {
+            method: "POST",
+            body: JSON.stringify({ mode, recordingType }),
+          }
+        );
 
-      if (!response.ok) {
-          const errorBody = await response.text();
-          console.error(`[ConversationSlice:createConversation] Failed to create. Status: ${response.status}, Body: ${errorBody}`);
-          throw new Error(`Failed to create conversation (Status: ${response.status})`);
+        const serverConversationId = data.conversation?.id || data.conversationId;
+
+        if (!serverConversationId) {
+          console.error(`[ConversationSlice:createConversation] Server response missing conversation ID. Response:`, data);
+          throw new Error("Server did not return a conversation ID");
+        }
+        console.log(`[ConversationSlice:createConversation] Conversation created successfully. ServerID=${serverConversationId}`);
+
+        // Add conversation to local state immediately
+        set((state) => ({
+          conversations: {
+            ...state.conversations,
+            [serverConversationId]: {
+              id: serverConversationId,
+              status: "waiting", // Initial status
+              mode,
+              recordingType,
+              // Add other default fields if necessary based on Conversation type
+            } as Conversation, // Cast to Conversation type
+          },
+        }));
+
+        // Set the mapping - this will trigger processing of any pending uploads for this local ID
+        await get().setLocalToServerId(localConversationId, serverConversationId);
+
+        return serverConversationId; // Return the server ID
+      } catch (error) {
+        console.error(`[ConversationSlice:createConversation] Failed:`, error);
+        // Let the calling hook handle the error (including AuthenticationError)
+        throw error;
       }
-
-      const data = await response.json();
-      const serverConversationId = data.conversation?.id || data.conversationId;
-
-      if (!serverConversationId) {
-           console.error(`[ConversationSlice:createConversation] Server response missing conversation ID. Response:`, data);
-           throw new Error("Server did not return a conversation ID");
-      }
-       console.log(`[ConversationSlice:createConversation] Conversation created successfully. ServerID=${serverConversationId}`);
-
-
-      // Add conversation to local state immediately
-      set((state) => ({
-        conversations: {
-          ...state.conversations,
-          [serverConversationId]: {
-            id: serverConversationId,
-            status: "waiting", // Initial status
-            mode,
-            recordingType,
-          } as Conversation, // Cast to Conversation type
-        },
-      }));
-
-      // Set the mapping - this will trigger processing of any pending uploads for this local ID
-      await get().setLocalToServerId(localConversationId, serverConversationId);
-
-      return serverConversationId; // Return the server ID
     },
 
     getConversation: async (conversationId: string): Promise<Conversation> => {
+      console.log(`[ConversationSlice:getConversation] Fetching conversation ${conversationId}`);
       set((state) => ({
         conversationLoading: { ...state.conversationLoading, [conversationId]: true },
       }));
 
       try {
-        const authHeader = await getAuthToken();
+        const data = await fetchWithAuth<{ conversation: Conversation }>( // Use fetchWithAuth
+          `/conversations/${conversationId}`
+          // Default method is GET, no options needed unless overriding
+        );
 
-        const response = await fetch(`${API_URL}/conversations/${conversationId}`, {
-          headers: { Authorization: authHeader },
-        });
-
-        if (!response.ok) {
-            const errorBody = await response.text();
-            console.error(`[ConversationSlice:getConversation] Failed to fetch ${conversationId}. Status: ${response.status}, Body: ${errorBody}`);
-            throw new Error(`Failed to fetch conversation (Status: ${response.status})`);
-        }
-
-        const data = await response.json();
         // Assuming server returns the full conversation object in `data.conversation`
-        const conversationData = data.conversation as Conversation;
+        const conversationData = data.conversation;
         if (!conversationData || !conversationData.id) {
-             console.error(`[ConversationSlice:getConversation] Server response missing conversation data for ${conversationId}. Response:`, data);
-             throw new Error("Invalid conversation data received from server");
+          console.error(`[ConversationSlice:getConversation] Server response missing conversation data for ${conversationId}. Response:`, data);
+          throw new Error("Invalid conversation data received from server");
         }
+        console.log(`[ConversationSlice:getConversation] Fetched successfully: ${conversationId}`);
 
         set((state) => ({
           conversations: { ...state.conversations, [conversationId]: conversationData },
@@ -111,10 +101,12 @@ export const createConversationSlice: StateCreator<
         }));
         return conversationData;
       } catch (error) {
+        console.error(`[ConversationSlice:getConversation] Failed for ${conversationId}:`, error);
         set((state) => ({
           conversationLoading: { ...state.conversationLoading, [conversationId]: false },
         }));
-        throw error; // Re-throw the original error
+        // Let the calling hook handle the error (including AuthenticationError)
+        throw error;
       }
     },
   };

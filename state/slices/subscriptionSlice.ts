@@ -1,4 +1,5 @@
-import { getAuthorizationHeader } from '@/utils/auth';
+// /Users/adimov/Developer/final/vibe/state/slices/subscriptionSlice.ts
+import { fetchWithAuth } from '@/utils/apiClient'; // Use the new API client
 import { Platform } from 'react-native';
 import {
   endConnection,
@@ -15,13 +16,9 @@ import {
   SubscriptionIOS,
 } from 'react-native-iap';
 import { StateCreator } from 'zustand';
-import { StoreState, SubscriptionSlice, UsageStats } from '../types';
+import { StoreState, SubscriptionResponse, SubscriptionSlice, UsageResponse, UsageStats } from '../types'; // Import response types
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL;
-if (!API_URL) {
-  console.error('[Store] EXPO_PUBLIC_API_URL environment variable is not set');
-  throw new Error('API URL is not configured');
-}
+// Removed: API_URL constant, handled by apiClient
 
 export const SUBSCRIPTION_SKUS = {
   MONTHLY: '2a',
@@ -63,34 +60,34 @@ export const createSubscriptionSlice: StateCreator<
     const receipt = purchase.transactionReceipt;
     if (receipt) {
       try {
+        // Finish transaction FIRST
         await finishTransaction({ purchase, isConsumable: false });
+        // Then verify with backend
         const result = await get().verifySubscription(receipt);
+        // Update state based on verified backend status
         set({ subscriptionStatus: result.subscription });
+        // Optionally refresh usage stats after successful verification
+        await get().getUsageStats();
       } catch (err) {
-        console.error('Error processing purchase:', err);
-        set({
-          subscriptionError:
-            err instanceof Error ? err : new Error('Failed to process purchase'),
-        });
+        console.error('[SubscriptionSlice] Error processing purchase update:', err);
+        // Don't set subscriptionError here, let verifySubscription handle it
+        // If finishTransaction fails, IAP might retry. If verify fails, error is handled there.
       }
+    } else {
+        console.warn('[SubscriptionSlice] Purchase update received without transactionReceipt:', purchase);
     }
   };
 
   const handlePurchaseError = (error: PurchaseError) => {
-    console.error('Purchase error:', error);
-    set({ subscriptionError: new Error(error.message) });
+    console.error('[SubscriptionSlice] Purchase error listener:', error);
+    // Set error state for UI feedback, potentially clear loading state
+    set({
+        subscriptionError: new Error(`Purchase failed: ${error.message} (Code: ${error.code})`),
+        subscriptionLoading: false // Ensure loading is stopped on error
+    });
   };
 
-  const getAuthToken = async () => {
-    console.log('[Store] Getting authorization header');
-    const authHeader = await getAuthorizationHeader();
-    if (!authHeader) {
-      console.error('[Store] No authentication token available');
-      throw new Error('Authentication required. Please sign in to access subscription features.');
-    }
-    console.log('[Store] Authorization header retrieved successfully');
-    return authHeader;
-  };
+  // Removed: getAuthToken helper, handled by fetchWithAuth
 
   return {
     subscriptionStatus: null,
@@ -99,131 +96,100 @@ export const createSubscriptionSlice: StateCreator<
     subscriptionLoading: false,
     subscriptionError: null,
 
-    verifySubscription: async (receiptData: string) => {
-      const authHeader = await getAuthToken();
-      const response = await fetch(`${API_URL}/subscriptions/verify`, {
-        method: 'POST',
-        headers: {
-          Authorization: authHeader,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ receiptData }),
-      });
-
-      if (!response.ok) throw new Error('Failed to verify subscription');
-      const data = await response.json();
-      set({ subscriptionStatus: data.subscription });
-      return data;
-    },
-
-    checkSubscriptionStatus: async () => {
+    verifySubscription: async (receiptData: string): Promise<SubscriptionResponse> => {
+      console.log('[SubscriptionSlice:verifySubscription] Verifying receipt...');
+      set({ subscriptionLoading: true, subscriptionError: null });
       try {
-        const authHeader = await getAuthToken();
-        const response = await fetch(`${API_URL}/subscriptions/status`, {
-          headers: { Authorization: authHeader },
-        });
-
-        if (!response.ok) throw new Error('Failed to check subscription status');
-        const data = await response.json();
+        const data = await fetchWithAuth<SubscriptionResponse>( // Use fetchWithAuth
+          '/subscriptions/verify',
+          {
+            method: 'POST',
+            body: JSON.stringify({ receiptData }),
+          }
+        );
+        console.log('[SubscriptionSlice:verifySubscription] Verification successful:', data.subscription);
         set({ subscriptionStatus: data.subscription });
         return data;
-      } catch (err) {
-        console.error('[Store] Error in checkSubscriptionStatus:', err);
-        throw err;
+      } catch (error) {
+        console.error('[SubscriptionSlice:verifySubscription] Verification failed:', error);
+        // Let the calling hook handle the error (including AuthenticationError)
+        set({ subscriptionError: error instanceof Error ? error : new Error('Verification failed') });
+        throw error;
+      } finally {
+        set({ subscriptionLoading: false });
       }
     },
 
-    getUsageStats: async () => {
+    checkSubscriptionStatus: async (): Promise<SubscriptionResponse> => {
+      console.log('[SubscriptionSlice:checkSubscriptionStatus] Checking status...');
+      // No loading state set here, usually part of a larger load sequence
       try {
-        console.log('[Store:getUsageStats] Fetching usage stats...');
-        const authHeader = await getAuthToken();
-        const response = await fetch(`${API_URL}/users/usage`, {
-          headers: { Authorization: authHeader },
-        });
+        const data = await fetchWithAuth<SubscriptionResponse>( // Use fetchWithAuth
+          '/subscriptions/status'
+        );
+        console.log('[SubscriptionSlice:checkSubscriptionStatus] Status check successful:', data.subscription);
+        set({ subscriptionStatus: data.subscription });
+        return data;
+      } catch (error) {
+        console.error('[SubscriptionSlice:checkSubscriptionStatus] Status check failed:', error);
+        // Let the calling hook handle the error (including AuthenticationError)
+        // Don't set error state here if called during initialization, let initializeStore handle it
+        throw error;
+      }
+    },
 
-        if (!response.ok) {
-          const errorBody = await response.text();
-          console.error(`[Store:getUsageStats] Failed. Status: ${response.status}, Body: ${errorBody}`);
-          throw new Error(`Failed to fetch usage stats (Status: ${response.status})`);
-        }
-        const data = await response.json();
+    getUsageStats: async (): Promise<UsageResponse> => {
+      console.log('[SubscriptionSlice:getUsageStats] Fetching usage stats...');
+      // No loading state set here, usually part of a larger load sequence
+      try {
+        const data = await fetchWithAuth<UsageResponse>( // Use fetchWithAuth
+          '/users/usage'
+        );
         if (!data.usage) {
-          console.error("[Store:getUsageStats] Invalid response structure: 'usage' key missing.", data);
+          console.error("[SubscriptionSlice:getUsageStats] Invalid response structure: 'usage' key missing.", data);
           throw new Error('Invalid usage data received from server');
         }
-        console.log('[Store:getUsageStats] Success. Usage:', data.usage);
+        console.log('[SubscriptionSlice:getUsageStats] Success. Usage:', data.usage);
         set({ usageStats: data.usage });
         return data;
-      } catch (err) {
-        console.error('[Store:getUsageStats] Error fetching usage stats:', err);
-        throw err;
+      } catch (error) {
+        console.error('[SubscriptionSlice:getUsageStats] Error fetching usage stats:', error);
+        // Let the calling hook handle the error (including AuthenticationError)
+        // Don't set error state here if called during initialization, let initializeStore handle it
+        throw error;
       }
     },
 
     initializeStore: async () => {
+      console.log('[SubscriptionSlice:initializeStore] Starting initialization...');
+      set({ subscriptionLoading: true, subscriptionError: null });
+
       try {
-        console.log('[Store] Starting subscription store initialization');
-        set({ subscriptionLoading: true, subscriptionError: null });
-        
-        console.log('[Store] Initializing IAP connection');
-        try {
-          await initConnection();
-          console.log('[Store] IAP connection initialized successfully');
-        } catch (initError) {
-          console.error('[Store] Failed to initialize IAP connection:', initError);
-          throw initError;
-        }
-        
-        console.log('[Store] Setting up purchase listeners');
+        console.log('[SubscriptionSlice:initializeStore] Initializing IAP connection...');
+        await initConnection();
+        console.log('[SubscriptionSlice:initializeStore] IAP connection initialized.');
+
+        // Remove existing listeners before adding new ones
+        if (purchaseUpdateSubscription) purchaseUpdateSubscription.remove();
+        if (purchaseErrorSubscription) purchaseErrorSubscription.remove();
+
         purchaseUpdateSubscription = purchaseUpdatedListener(handlePurchaseUpdate);
         purchaseErrorSubscription = purchaseErrorListener(handlePurchaseError);
-        
-        const skus = Object.values(SUBSCRIPTION_SKUS);
-        console.log('[Store] Fetching subscription products with specific SKUs:', skus);
-        console.log('[Store] Current platform:', Platform.OS);
-        console.log('[Store] Bundle ID:', require('../../../app.json').expo.ios.bundleIdentifier);
-        
-        try {
-          const rawProducts = await getSubscriptions({
-            skus: skus,
-          });
-          
-          if (rawProducts.length === 0) {
-            console.log('[Store] No products found. This could be due to:');
-            console.log('- Products not properly configured in App Store Connect');
-            console.log('- Missing metadata for products');
-            console.log('- Bundle ID mismatch');
-            console.log('- Not using a sandbox test account');
-          }
-          
-          console.log(`[Store] Found ${rawProducts.length} subscription products:`, 
-            rawProducts.map(p => ({
-              productId: p.productId,
-              title: p.title,
-              description: p.description,
-              price: p.price
-          })));
+        console.log('[SubscriptionSlice:initializeStore] Purchase listeners attached.');
 
-          // Map raw products to our consistent PlatformSubscriptionProduct interface
-          const mappedProducts: PlatformSubscriptionProduct[] = rawProducts.map((product): PlatformSubscriptionProduct => {
+        const skus = Object.values(SUBSCRIPTION_SKUS);
+        console.log('[SubscriptionSlice:initializeStore] Fetching subscription products:', skus);
+
+        const rawProducts = await getSubscriptions({ skus });
+        console.log(`[SubscriptionSlice:initializeStore] Found ${rawProducts.length} raw products.`);
+
+        const mappedProducts: PlatformSubscriptionProduct[] = rawProducts.map((product): PlatformSubscriptionProduct => {
             let price = 'N/A';
             let offerDetails: PlatformSubscriptionProduct['subscriptionOfferDetails'] | undefined = undefined;
 
             if (isIOSSubscription(product)) {
-              console.log('[Store] Processing iOS product:', {
-                productId: product.productId,
-                title: product.title,
-                price: product.price,
-                description: product.description
-              });
               price = String(product.price ?? 'N/A');
             } else if (isAndroidSubscription(product)) {
-              console.log('[Store] Processing Android product:', {
-                productId: product.productId,
-                title: product.title,
-                price: product.price,
-                description: product.description
-              });
               price = String(product.price ?? 'N/A');
               offerDetails = product.subscriptionOfferDetails?.map(offer => ({
                 offerToken: offer.offerToken,
@@ -240,77 +206,89 @@ export const createSubscriptionSlice: StateCreator<
             };
           });
 
-          console.log('[Store] Mapped products:', mappedProducts);
-          set({ subscriptionProducts: mappedProducts });
-        } catch (err) {
-          console.error('[Store] Error fetching products:', err instanceof Error ? err.message : err);
-          throw new Error('Failed to fetch subscription products');
-        }
+        console.log('[SubscriptionSlice:initializeStore] Mapped products:', mappedProducts);
+        set({ subscriptionProducts: mappedProducts });
 
-        console.log('[Store] Checking subscription status and usage stats');
-        await Promise.all([
-          get().checkSubscriptionStatus(),
-          get().getUsageStats(),
-        ]);
-        
-        console.log('[Store] Store initialization completed successfully');
-      } catch (err) {
-        console.error('[Store] Failed to initialize subscription store:', err);
-        set({
-          subscriptionError:
-            err instanceof Error ? err : new Error('Failed to connect to store'),
-        });
-      } finally {
-        set({ subscriptionLoading: false });
-      }
-    },
-
-    cleanupStore: () => {
-      if (purchaseUpdateSubscription) purchaseUpdateSubscription.remove();
-      if (purchaseErrorSubscription) purchaseErrorSubscription.remove();
-      endConnection();
-    },
-
-    purchaseSubscription: async (productId: string, offerToken?: string) => {
-      set({ subscriptionLoading: true, subscriptionError: null });
-      try {
-        if (Platform.OS === 'ios') {
-          await requestSubscription({
-            sku: productId,
-            andDangerouslyFinishTransactionAutomaticallyIOS: false,
-          });
-        } else {
-          await requestSubscription({
-            sku: productId,
-            ...(offerToken && { subscriptionOffers: [{ sku: productId, offerToken }] }),
-          });
-        }
-      } catch (err) {
-        const error =
-          err instanceof Error ? err : new Error('Failed to purchase subscription');
-        set({ subscriptionError: error });
-        throw error;
-      } finally {
-        set({ subscriptionLoading: false });
-      }
-    },
-
-    restorePurchases: async () => {
-      set({ subscriptionLoading: true, subscriptionError: null });
-      try {
+        console.log('[SubscriptionSlice:initializeStore] Checking initial subscription status and usage stats...');
+        // Perform these sequentially to ensure auth works before proceeding
         await get().checkSubscriptionStatus();
+        await get().getUsageStats();
+
+        console.log('[SubscriptionSlice:initializeStore] Initialization completed successfully.');
+
       } catch (err) {
+        console.error('[SubscriptionSlice:initializeStore] Initialization failed:', err);
+        // Set error state here for initialization failures
         set({
-          subscriptionError:
-            err instanceof Error ? err : new Error('Failed to restore purchases'),
+          subscriptionError: err instanceof Error ? err : new Error('Failed to initialize store'),
         });
+        // Re-throw the error so the calling hook can handle it (e.g., trigger sign out if auth error)
         throw err;
       } finally {
         set({ subscriptionLoading: false });
       }
     },
 
+    cleanupStore: () => {
+      console.log('[SubscriptionSlice:cleanupStore] Cleaning up listeners and connection.');
+      if (purchaseUpdateSubscription) purchaseUpdateSubscription.remove();
+      if (purchaseErrorSubscription) purchaseErrorSubscription.remove();
+      purchaseUpdateSubscription = null;
+      purchaseErrorSubscription = null;
+      endConnection();
+    },
+
+    purchaseSubscription: async (productId: string, offerToken?: string) => {
+      console.log(`[SubscriptionSlice:purchaseSubscription] Requesting purchase for Product ID: ${productId}, Offer Token: ${offerToken || 'N/A'}`);
+      set({ subscriptionLoading: true, subscriptionError: null }); // Set loading, clear error
+      try {
+        await requestSubscription({
+          sku: productId,
+          // Conditionally add subscriptionOffers for Android
+          ...(Platform.OS === 'android' && offerToken && {
+            subscriptionOffers: [{ sku: productId, offerToken }],
+          }),
+          // For iOS, use this to prevent automatic finishing before verification
+          ...(Platform.OS === 'ios' && {
+            andDangerouslyFinishTransactionAutomaticallyIOS: false,
+          }),
+        });
+        // Loading state will be cleared by the listener (success or error)
+        console.log(`[SubscriptionSlice:purchaseSubscription] Purchase request initiated for ${productId}. Waiting for listener...`);
+      } catch (err) {
+        // This catch block might handle immediate request errors (e.g., product not found by IAP)
+        console.error(`[SubscriptionSlice:purchaseSubscription] Error initiating purchase request for ${productId}:`, err);
+        const error = err instanceof Error ? err : new Error('Failed to initiate purchase');
+        set({ subscriptionError: error, subscriptionLoading: false }); // Set error, clear loading
+        throw error; // Re-throw for potential UI handling
+      }
+    },
+
+    restorePurchases: async () => {
+      console.log('[SubscriptionSlice:restorePurchases] Attempting to restore purchases by checking status...');
+      set({ subscriptionLoading: true, subscriptionError: null });
+      try {
+        // Restoring essentially means re-checking the status with the backend
+        await get().checkSubscriptionStatus();
+        // Optionally refresh usage stats after successful restore/status check
+        await get().getUsageStats();
+        console.log('[SubscriptionSlice:restorePurchases] Restore check completed.');
+      } catch (err) {
+        console.error('[SubscriptionSlice:restorePurchases] Restore check failed:', err);
+        set({
+          subscriptionError: err instanceof Error ? err : new Error('Failed to restore purchases'),
+        });
+        // Re-throw so the calling hook can handle it (e.g., sign out on auth error)
+        throw err;
+      } finally {
+        set({ subscriptionLoading: false });
+      }
+    },
+
+    // This seems redundant if getUsageStats is called during init/restore
+    // Keep if needed for specific scenarios
     setInitialUsageStats: (stats: UsageStats) => {
+      console.log('[SubscriptionSlice:setInitialUsageStats] Setting initial usage stats (external source):', stats);
       set({ usageStats: stats });
     },
   };
