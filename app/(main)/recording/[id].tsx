@@ -34,7 +34,6 @@ function getModeDetails(id: string): Mode {
 
 // Define the component function
 function RecordingScreen() { // Renamed internally for clarity with memo
-  console.warn("[RecordingScreen] Component rendering...");
   const { id: modeParam } = useLocalSearchParams();
   const router = useRouter();
   const store = useStore(); // Direct store access might be less needed now

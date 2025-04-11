@@ -2,7 +2,6 @@ import { useAuthentication } from "@/hooks/useAuthentication";
 import { Redirect } from 'expo-router';
 
 export default function Index() {
-  console.warn("[Index] Component rendering...");
   const { isAuthenticated, isLoading } = useAuthentication();
   
   if (isLoading) {

@@ -54,7 +54,6 @@ const NavigationLayout = () => {
   if (!appIsReady) {
     return null;
   }
-  console.warn("[RootLayout] Component rendering...");
   return (
     <>
       <Stack

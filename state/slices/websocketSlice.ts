@@ -143,8 +143,9 @@ export const createWebSocketSlice: StateCreator<
                       });
 
                       try {
+                          const tokenType = tokens.sessionToken ? 'session' : 'identity';
+                          console.log(`[WS Client] WebSocket Event: onopen - Sending authentication using ${tokenType} token...`);
                           const authMessage = JSON.stringify({ type: 'auth', token: token });
-                          console.log('[WS Client] WebSocket Event: onopen - Sending authentication...');
                           ws.send(authMessage);
                           console.log('[WS Client] WebSocket Event: onopen - Authentication sent.');
                       } catch (sendError) {
@@ -417,39 +418,40 @@ export const createWebSocketSlice: StateCreator<
 
           try {
               const storedTopics = await AsyncStorage.getItem(WEBSOCKET_SUBSCRIPTIONS_KEY);
-              if (storedTopics) {
-                  let topics: string[] = JSON.parse(storedTopics);
-                  const initialLength = topics.length;
-                  topics = topics.filter(t => t !== topic);
-                  if (topics.length < initialLength) {
-                      await AsyncStorage.setItem(WEBSOCKET_SUBSCRIPTIONS_KEY, JSON.stringify(topics));
-                      console.log(`[WS Client] unsubscribeFromConversation: Removed stored request for ${topic}`);
-                  }
-              }
+              let topics: string[] = storedTopics ? JSON.parse(storedTopics) : [];
+              topics = topics.filter(t => t !== topic);
+              await AsyncStorage.setItem(WEBSOCKET_SUBSCRIPTIONS_KEY, JSON.stringify(topics));
+              console.log(`[WS Client] unsubscribeFromConversation: Unsubscribed from ${topic}`);
           } catch (e: unknown) {
-              console.error('[WS Client] unsubscribeFromConversation: Failed to remove stored request:', e instanceof Error ? e.message : e);
+              console.error('[WS Client] unsubscribeFromConversation: Failed to store unsubscription:', e instanceof Error ? e.message : e);
           }
 
           if (socket?.readyState === WebSocket.OPEN) {
               try {
-                  socket.send(JSON.stringify({ type: 'unsubscribe', topic: topic }));
+                  const unsubscribeMessage = JSON.stringify({ type: 'unsubscribe', topic: topic });
+                  socket.send(unsubscribeMessage);
                   console.log(`[WS Client] unsubscribeFromConversation: Sent unsubscribe for ${topic}`);
               } catch (e) {
                   console.error(`[WS Client] unsubscribeFromConversation: Failed to send unsubscribe for ${topic}:`, e);
               }
           } else {
-              console.log(`[WS Client] unsubscribeFromConversation: Socket not open. Stored request removed.`);
+              const socketState = socket ? (WebSocket.CONNECTING === socket.readyState ? 'CONNECTING' : WebSocket.CLOSING === socket.readyState ? 'CLOSING' : WebSocket.CLOSED === socket.readyState ? 'CLOSED' : 'UNKNOWN') : 'null';
+              console.log(`[WS Client] unsubscribeFromConversation: Socket not open (state: ${socketState}). Will send on connect.`);
+              if (!socket || socket.readyState === WebSocket.CLOSED) {
+                  console.log("[WS Client] unsubscribeFromConversation: Socket closed, attempting reconnect.");
+                  actions.connectWebSocket();
+              }
           }
       }, // End of unsubscribeFromConversation
 
       clearMessages: () => {
-          set((state) => { // state is Draft<StoreState>
+          set((state) => {
               state.wsMessages = [];
           });
-          console.log("[WS Client] WebSocket message history cleared.");
-      }, // End of clearMessages
+      },
   }; // End of actions object
 
+  // Return the slice, combining initial state and actions
   return {
       ...initialState,
       ...actions,
