@@ -1,5 +1,5 @@
-import React from 'react';
-import { SafeAreaView, ScrollView, StatusBar, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import type React from 'react';
+import { SafeAreaView, ScrollView, StatusBar, type StyleProp, StyleSheet, View, type ViewStyle } from 'react-native';
 
 interface ContainerProps {
   children: React.ReactNode;

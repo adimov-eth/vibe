@@ -6,7 +6,7 @@ import { colors, spacing, typography } from '@/constants/styles';
 import { useUsage } from '@/hooks';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback } from 'react';
-import { StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
+import { StyleSheet, Text, type TextStyle, View, type ViewStyle } from 'react-native';
 
 // Define the Mode interface since we're using it locally
 interface Mode {

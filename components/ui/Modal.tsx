@@ -5,12 +5,12 @@ import {
     Animated,
     Pressable,
     Modal as RNModal,
-    StyleProp,
+    type StyleProp,
     StyleSheet,
     Text,
     useWindowDimensions,
     View,
-    ViewStyle,
+    type ViewStyle,
 } from 'react-native';
 
 interface ModalProps {

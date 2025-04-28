@@ -1,7 +1,7 @@
 // /Users/adimov/Developer/final/vibe/state/slices/conversationSlice.ts
 import { fetchWithAuth } from "@/utils/apiClient"; // Use the new API client
-import { StateCreator } from "zustand";
-import { Conversation, ConversationSlice, StoreState } from "../types";
+import type { StateCreator } from "zustand";
+import type { Conversation, ConversationSlice, StoreState } from "../types";
 
 // Removed: const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -45,7 +45,7 @@ export const createConversationSlice: StateCreator<
         const serverConversationId = data.conversation?.id || data.conversationId;
 
         if (!serverConversationId) {
-          console.error(`[ConversationSlice:createConversation] Server response missing conversation ID. Response:`, data);
+          console.error("[ConversationSlice:createConversation] Server response missing conversation ID. Response:", data);
           throw new Error("Server did not return a conversation ID");
         }
         console.log(`[ConversationSlice:createConversation] Conversation created successfully. ServerID=${serverConversationId}`);
@@ -69,7 +69,7 @@ export const createConversationSlice: StateCreator<
 
         return serverConversationId; // Return the server ID
       } catch (error) {
-        console.error(`[ConversationSlice:createConversation] Failed:`, error);
+        console.error("[ConversationSlice:createConversation] Failed:", error);
         // Let the calling hook handle the error (including AuthenticationError)
         throw error;
       }

@@ -1,8 +1,9 @@
 // components/ErrorDisplay.tsx
 import { showToast } from '@/components/ui/Toast';
 import useStore from '@/state';
-import { ErrorMessage } from '@/state/types';
-import React, { useEffect } from 'react';
+import type { ErrorMessage } from '@/state/types';
+import type React from 'react';
+import { useEffect } from 'react';
 
 const ErrorDisplay: React.FC = () => {
   const wsMessages = useStore((state) => state.wsMessages);

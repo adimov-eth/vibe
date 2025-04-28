@@ -74,7 +74,7 @@ export const uploadFile = async ({
             const result = JSON.parse(response.body);
             console.log(`[UploadHelper] Upload successful for ${conversationId}_${audioKey}. URL: ${result.url}`);
             return { success: true, url: result.url, statusCode: response.status };
-        } else {
+        }
             const errorBody = response?.body ? `: ${response.body.substring(0, 150)}` : '';
             const errorMessage = `${response?.status || 'Network Error'}: Upload failed${errorBody}`;
             console.error(`[UploadHelper] Upload failed for ${conversationId}_${audioKey}: ${errorMessage}`);
@@ -83,7 +83,6 @@ export const uploadFile = async ({
                 error: errorMessage,
                 statusCode: response?.status
             };
-        }
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         console.error(`[UploadHelper] CATCH block: Foreground upload failed for ${conversationId}_${audioKey}:`, errorMessage);

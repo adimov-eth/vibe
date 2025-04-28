@@ -1,5 +1,6 @@
 import { animation, colors, typography } from '@/constants/styles';
-import React, { useEffect, useRef } from 'react';
+import type React from 'react';
+import { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 
 interface TimerProps {

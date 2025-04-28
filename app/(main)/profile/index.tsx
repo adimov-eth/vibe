@@ -39,7 +39,7 @@ export default function Profile() {
   // Correctly calculate usageLimit based on whether user is subscribed
   const usageLimit = usageStats
     ? usageStats.isSubscribed
-      ? Infinity // Or a very large number / null to represent unlimited
+      ? Number.POSITIVE_INFINITY // Or a very large number / null to represent unlimited
       : usageStats.limit
     : 0;
 

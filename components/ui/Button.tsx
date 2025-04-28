@@ -5,11 +5,11 @@ import {
   ActivityIndicator,
   Animated,
   Pressable,
-  StyleProp,
+  type StyleProp,
   StyleSheet,
   Text,
   View,
-  ViewStyle
+  type ViewStyle
 } from 'react-native';
 
 interface ButtonProps {

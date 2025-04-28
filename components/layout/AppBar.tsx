@@ -1,7 +1,8 @@
 import { getAuthTokens } from '@/utils/auth';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import type React from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface AppBarProps {
@@ -67,7 +68,7 @@ export const AppBar: React.FC<AppBarProps> = ({
   const getUserInitial = () => {
     if (userInfo?.fullName?.givenName) {
       return userInfo.fullName.givenName[0].toUpperCase();
-    } else if (userInfo?.email) {
+    }if (userInfo?.email) {
       return userInfo.email[0].toUpperCase();
     }
     return '?';

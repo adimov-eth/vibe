@@ -1,5 +1,5 @@
-import React from 'react';
-import { Dimensions, StyleProp, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
+import type React from 'react';
+import { Dimensions, type StyleProp, StyleSheet, Text, TouchableOpacity, View, type ViewStyle } from 'react-native';
 
 const { width } = Dimensions.get('window');
 const cardIconSize = width * 0.12; // Responsive icon size

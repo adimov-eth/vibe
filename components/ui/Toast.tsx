@@ -1,8 +1,8 @@
 // app/components/ui/Toast.tsx
 import { Ionicons } from '@expo/vector-icons';
-import React from 'react';
+import type React from 'react';
 import { StyleSheet, View } from 'react-native';
-import Toast, { BaseToast, BaseToastProps, ErrorToast, ToastConfig } from 'react-native-toast-message';
+import Toast, { BaseToast, type BaseToastProps, ErrorToast, type ToastConfig } from 'react-native-toast-message';
 
 // Configure toast appearance
 const toastConfig: ToastConfig = {

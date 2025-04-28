@@ -1,11 +1,8 @@
+// /Users/adimov/Developer/final/vibe/hooks/useConversationResult.ts
 import { useEffect, useState } from 'react';
 import useStore from '../state/index';
 import type { ConversationResult } from '../state/types';
-
-// REMOVED Placeholder type
-// interface ConversationResultsMap {
-//  [key: string]: ConversationResult;
-// }
+import { useConversation } from './useConversation'; // Import useConversation
 
 export const useConversationResult = (conversationId: string) => {
   console.log(`[useConversationResult Hook] Initializing for conversation: ${conversationId}`);
@@ -14,16 +11,24 @@ export const useConversationResult = (conversationId: string) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Get necessary functions and state from Zustand
-  const { 
-    conversationResults, 
-    subscribeToConversation, 
-    unsubscribeFromConversation, 
-    getConversationResultError 
+  // --- Fetch conversation details via REST ---
+  const {
+    conversation: conversationDataRest,
+    isLoading: conversationLoadingRest,
+    error: conversationErrorRest,
+  } = useConversation(conversationId);
+  // --- End REST fetch ---
+
+  // Get necessary functions and state from Zustand (WebSocket)
+  const {
+    conversationResults,
+    subscribeToConversation,
+    unsubscribeFromConversation,
+    getConversationResultError
   } = useStore();
 
-  // Get the specific result data for this conversation
-  const data: ConversationResult | null = conversationResults?.[conversationId] || null;
+  // Get the specific result data for this conversation from WebSocket state
+  const dataWs: ConversationResult | null = conversationResults?.[conversationId] || null;
 
   // Subscribe on mount and unsubscribe on unmount
   useEffect(() => {
@@ -36,27 +41,31 @@ export const useConversationResult = (conversationId: string) => {
     };
   }, [conversationId, subscribeToConversation, unsubscribeFromConversation]);
 
-  // Update loading and error state based on Zustand store
+  // Update loading and error state based on Zustand store AND REST API results
   useEffect(() => {
-    const convError = getConversationResultError(conversationId); // Get specific error
-    const hasData = !!data;
-    // Check for status property existence before accessing it
-    const isProcessing = hasData && data.status === 'processing'; 
+    const wsError = getConversationResultError(conversationId); // Get specific WS error
+    const hasWsData = !!dataWs;
+    const isWsProcessing = hasWsData && dataWs.status === 'processing';
+    const isWsCompleted = hasWsData && dataWs.status === 'completed';
+    const isWsError = hasWsData && dataWs.status === 'error';
 
-    if (convError) {
-      setError(convError);
-      setIsLoading(false);
-    } else if (hasData && !isProcessing) {
-      // Completed or errored state from data
-      // Check for error property existence
-      setError(data.error || null);
-      setIsLoading(false);
-    } else {
-      // Still processing or no data yet
-      setError(null);
-      setIsLoading(true);
-    }
-  }, [data, conversationId, getConversationResultError]);
+    // Determine combined error
+    const combinedError = wsError || conversationErrorRest || (isWsError ? dataWs.error : null);
+    setError(combinedError || null);
+
+    // Determine loading state
+    // Loading if REST is loading OR if WS is still processing and REST hasn't finished/errored
+    const stillLoading = conversationLoadingRest || (isWsProcessing && !conversationDataRest?.status);
+    setIsLoading(stillLoading);
+
+  }, [
+      dataWs,
+      conversationId,
+      getConversationResultError,
+      conversationDataRest, // Add REST data as dependency
+      conversationLoadingRest, // Add REST loading as dependency
+      conversationErrorRest // Add REST error as dependency
+  ]);
 
   // Refetch might involve clearing local state and letting useEffect re-subscribe/fetch
   // Or trigger a specific action in the store if needed.
@@ -67,12 +76,14 @@ export const useConversationResult = (conversationId: string) => {
     // Re-trigger subscription effect
     unsubscribeFromConversation(conversationId);
     subscribeToConversation(conversationId);
+    // Optionally trigger REST refetch if useConversation provides it
   };
 
   return {
-    data,       // Directly return the processed data from the store
-    isLoading, 
+    data: dataWs, // Return the WebSocket data
+    conversationData: conversationDataRest, // Also return REST data
+    isLoading,
     error,
     refetch,
   };
-}; 
+};

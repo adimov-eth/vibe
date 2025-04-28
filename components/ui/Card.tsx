@@ -1,13 +1,13 @@
 import { animation, colors, layout, spacing } from '@/constants/styles';
 import React from 'react';
 import {
-    AccessibilityRole,
+    type AccessibilityRole,
     Animated,
     Pressable,
-    StyleProp,
+    type StyleProp,
     StyleSheet,
     View,
-    ViewStyle
+    type ViewStyle
 } from 'react-native';
 
 interface CardProps {

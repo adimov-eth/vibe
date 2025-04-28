@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { StyleProp, StyleSheet, Text, TextInput, TextStyle, View, ViewStyle } from 'react-native';
+import type React from 'react';
+import { useState } from 'react';
+import { type StyleProp, StyleSheet, Text, TextInput, type TextStyle, View, type ViewStyle } from 'react-native';
 
 interface FormFieldProps {
   label?: string;

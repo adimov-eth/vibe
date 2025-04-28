@@ -5,7 +5,7 @@ import { Container } from '@/components/layout/Container';
 import { showToast } from '@/components/ui/Toast';
 import { colors, spacing, typography } from '@/constants/styles';
 import { storeAuthTokens } from '@/utils/auth';
-import * as AppleAuthentication from 'expo-apple-authentication';
+import type * as AppleAuthentication from 'expo-apple-authentication';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
@@ -47,12 +47,13 @@ export default function Authenticate() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // Send the Apple identityToken for backend validation
-          'Authorization': `Bearer ${identityToken}`,
+          // --- FIX: REMOVE Authorization header for this specific request ---
+          // 'Authorization': `Bearer ${identityToken}`, // REMOVED
+          // --- End Fix ---
         },
         body: JSON.stringify({
           // Send necessary user details obtained from Apple
-          identityToken, // May be redundant if already in header, check backend requirements
+          identityToken, // Send token in the body
           email: userData.email,
           fullName: userData.fullName,
         }),

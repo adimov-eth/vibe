@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/Button';
 import { colors, layout, spacing, typography } from '@/constants/styles';
-import React from 'react';
+import type React from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 
 interface AppDataCardProps {

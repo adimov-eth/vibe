@@ -6,17 +6,17 @@ import {
   finishTransaction,
   getSubscriptions,
   initConnection,
-  Purchase,
-  PurchaseError,
+  type Purchase,
+  type PurchaseError,
   purchaseErrorListener,
   purchaseUpdatedListener,
   requestSubscription,
-  Subscription,
-  SubscriptionAndroid,
-  SubscriptionIOS,
+  type Subscription,
+  type SubscriptionAndroid,
+  type SubscriptionIOS,
 } from 'react-native-iap';
-import { StateCreator } from 'zustand';
-import { StoreState, SubscriptionResponse, SubscriptionSlice, UsageResponse, UsageStats } from '../types'; // Import response types
+import type { StateCreator } from 'zustand';
+import type { StoreState, SubscriptionResponse, SubscriptionSlice, UsageResponse, UsageStats } from '../types'; // Import response types
 
 // Removed: API_URL constant, handled by apiClient
 

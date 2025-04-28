@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/Button';
 import { colors, layout, spacing, typography } from '@/constants/styles';
 import type { SubscriptionStatus, UsageStats } from '@/state/types';
-import React from 'react';
+import type React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 interface SubscriptionCardProps {
@@ -36,15 +36,14 @@ export const SubscriptionCard: React.FC<SubscriptionCardProps> = ({
     // Free user usage display
     if (remainingConversations > 0) {
        return `${remainingConversations} conversation${remainingConversations === 1 ? '' : 's'} left`;
-    } else {
-       return 'No free conversations left';
     }
+       return 'No free conversations left';
   };
 
   const getExpiryOrResetText = () => {
        if (isSubscribed) {
            return `Renews on ${getFormattedDate(expiryDate)}`;
-       } else if (remainingConversations <= 0) {
+       }if (remainingConversations <= 0) {
             // Show reset date only if free conversations are used up
             const resetDate = usageStats?.resetDate;
             return `Resets on ${getFormattedDate(resetDate)}`;
