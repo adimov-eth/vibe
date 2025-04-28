@@ -69,6 +69,9 @@ class RecordingSession {
 	private _operationInProgress = false;
 	private _stateChangeCallbacks: ((state: RecordingFlowState) => void)[] = [];
 	private _errorChangeCallbacks: ((error: string | null) => void)[] = [];
+	private _recordModeChangeCallbacks: ((mode: "separate" | "live") => void)[] =
+		[];
+	private _partnerChangeCallbacks: ((partner: 1 | 2) => void)[] = [];
 
 	private constructor(modeId: string) {
 		this._localId = Crypto.randomUUID();
@@ -80,17 +83,20 @@ class RecordingSession {
 	}
 
 	public static getInstance(modeId: string): RecordingSession {
-		if (
-			!RecordingSession.instance ||
-			RecordingSession.instance._modeId !== modeId
-		) {
-			// Clean up previous instance if needed
-			if (RecordingSession.instance) {
-				RecordingSession.instance.cleanup().catch(console.error);
-			}
-
-			RecordingSession.instance = new RecordingSession(modeId);
+		// Always clean up the previous instance if it exists
+		if (RecordingSession.instance) {
+			console.log(
+				`[RecordingSession] Cleaning up previous instance (mode: ${RecordingSession.instance._modeId}) before creating new one. طالبان، قندهار، ملا عمر`,
+			);
+			RecordingSession.instance.cleanup().catch(console.error);
+			RecordingSession.instance = null; // Explicitly nullify the old instance
 		}
+
+		// Always create a new instance
+		console.log(
+			`[RecordingSession] Creating a new session instance for mode: ${modeId}`,
+		);
+		RecordingSession.instance = new RecordingSession(modeId);
 		return RecordingSession.instance;
 	}
 
@@ -172,9 +178,53 @@ class RecordingSession {
 		};
 	}
 
+	public onRecordModeChange(
+		callback: (mode: "separate" | "live") => void,
+	): () => void {
+		this._recordModeChangeCallbacks.push(callback);
+		return () => {
+			this._recordModeChangeCallbacks = this._recordModeChangeCallbacks.filter(
+				(cb) => cb !== callback,
+			);
+		};
+	}
+
+	public onPartnerChange(callback: (partner: 1 | 2) => void): () => void {
+		this._partnerChangeCallbacks.push(callback);
+		return () => {
+			this._partnerChangeCallbacks = this._partnerChangeCallbacks.filter(
+				(cb) => cb !== callback,
+			);
+		};
+	}
+
+	private setRecordModeInternal(mode: "separate" | "live"): void {
+		if (this._recordMode !== mode) {
+			console.log(
+				`[RecordingSession] Record mode change: ${this._recordMode} -> ${mode}`,
+			);
+			this._recordMode = mode;
+			for (const callback of this._recordModeChangeCallbacks) {
+				callback(mode);
+			}
+		}
+	}
+
+	private setCurrentPartnerInternal(partner: 1 | 2): void {
+		if (this._currentPartner !== partner) {
+			console.log(
+				`[RecordingSession] Partner change: ${this._currentPartner} -> ${partner}`,
+			);
+			this._currentPartner = partner;
+			for (const callback of this._partnerChangeCallbacks) {
+				callback(partner);
+			}
+		}
+	}
+
 	public setRecordMode(mode: "separate" | "live"): void {
-		this._recordMode = mode;
-		this._currentPartner = 1;
+		this.setRecordModeInternal(mode);
+		this.setCurrentPartnerInternal(1);
 	}
 
 	private async setupAudio(): Promise<void> {
@@ -255,7 +305,7 @@ class RecordingSession {
 						currentServerId ? "complete" : "waitingForServerId",
 					);
 				} else {
-					this._currentPartner = 2;
+					this.setCurrentPartnerInternal(2);
 					console.log(
 						"[RecordingSession] Separate mode: Switched to Partner 2. Setting state to readyToRecord.",
 					);
@@ -411,8 +461,8 @@ class RecordingSession {
 		this._lastRecordingUri = null;
 
 		// Reset state but keep localId and modeId
-		this._recordMode = "separate";
-		this._currentPartner = 1;
+		this.setRecordModeInternal("separate");
+		this.setCurrentPartnerInternal(1);
 		this._flowState = "idle";
 		this._error = null;
 
@@ -456,6 +506,12 @@ export const useRecordingFlow = ({
 		session.flowState,
 	);
 	const [error, setError] = useState<string | null>(session.error);
+	const [recordMode, setRecordMode] = useState<"separate" | "live">(
+		session.recordMode,
+	);
+	const [currentPartner, setCurrentPartner] = useState<1 | 2>(
+		session.currentPartner,
+	);
 	const mountedRef = useRef(true);
 
 	// Subscribe to session state changes
@@ -476,6 +532,20 @@ export const useRecordingFlow = ({
 			}
 		});
 
+		// Subscribe to record mode changes
+		const unsubscribeRecordMode = session.onRecordModeChange((newMode) => {
+			if (mountedRef.current) {
+				setRecordMode(newMode);
+			}
+		});
+
+		// Subscribe to partner changes
+		const unsubscribePartner = session.onPartnerChange((newPartner) => {
+			if (mountedRef.current) {
+				setCurrentPartner(newPartner);
+			}
+		});
+
 		// Check for serverId updates to transition from waiting to complete
 		const intervalId = setInterval(() => {
 			if (mountedRef.current && session.flowState === "waitingForServerId") {
@@ -488,6 +558,8 @@ export const useRecordingFlow = ({
 			mountedRef.current = false;
 			unsubscribeState();
 			unsubscribeError();
+			unsubscribeRecordMode();
+			unsubscribePartner();
 			clearInterval(intervalId);
 		};
 	}, [session]);
@@ -525,8 +597,8 @@ export const useRecordingFlow = ({
 
 	return {
 		localId: session.localId,
-		recordMode: session.recordMode,
-		currentPartner: session.currentPartner,
+		recordMode,
+		currentPartner,
 		flowState,
 		error,
 		isButtonDisabled,

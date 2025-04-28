@@ -280,10 +280,23 @@ export const uploadAudioInBackground = async (
 		}
 
 		if (!response || response.status < 200 || response.status >= 300) {
-			const errorBody = response?.body
-				? `: ${response.body.substring(0, 100)}`
-				: "";
-			const errorMessage = `${response?.status || "Network Error"}: Background upload failed${errorBody}`;
+			// Attempt to parse JSON body for more specific errors
+			let errorJson = null;
+			try {
+				if (response?.body) {
+					errorJson = JSON.parse(response.body);
+				}
+			} catch (parseError) {
+				// Ignore if parsing fails - means it wasn't JSON
+			}
+
+			const errorDetail =
+				errorJson?.error ||
+				errorJson?.message ||
+				response?.body?.substring(0, 100) ||
+				"No details";
+			const errorMessage = `${response?.status || "Network Error"}: Background upload failed - ${errorDetail}`;
+
 			console.error(
 				`[BackgroundUtil:uploadAudioInBackground] Upload failed: ${errorMessage}`,
 			);

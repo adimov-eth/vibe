@@ -433,9 +433,41 @@ export const createUploadSlice: StateCreator<
 				console.error(
 					`[UploadSlice:uploadAudio] Foreground upload FAILED for ${uploadId}: ${result.error}`,
 				);
-				console.warn(
-					`[UploadSlice:uploadAudio] Upload failed for ${uploadId}. Pending record should exist in AsyncStorage for background task.`,
-				);
+
+				// --- FIX: Check for non-retryable errors ---
+				const isNonRetryableError =
+					result.statusCode === 400 &&
+					result.error &&
+					(result.error.includes("Maximum number of audios") ||
+						result.error.includes("already exists"));
+
+				if (isNonRetryableError) {
+					console.warn(
+						`[UploadSlice:uploadAudio] Upload failed for ${uploadId} due to non-retryable server error (${result.statusCode}). Removing from pending uploads.`,
+					);
+					await removePendingUpload(
+						conversationId,
+						audioKey,
+						currentLocalToServerIds,
+					);
+					// Optionally, delete the local file as well since it won't be uploaded
+					try {
+						console.log(
+							`[UploadSlice:uploadAudio] Deleting local file ${audioUri} after non-retryable upload failure.`,
+						);
+						await FileSystem.deleteAsync(audioUri, { idempotent: true });
+					} catch (deleteError) {
+						console.error(
+							`[UploadSlice:uploadAudio] Failed to delete local file ${audioUri} after non-retryable failure: ${deleteError}`,
+						);
+					}
+				} else {
+					// Original behavior for potentially transient errors
+					console.warn(
+						`[UploadSlice:uploadAudio] Upload failed for ${uploadId} (Status: ${result.statusCode}). Pending record should exist in AsyncStorage for background task.`,
+					);
+				}
+				// --- End Fix ---
 			}
 		} catch (error) {
 			const errorMessage =
