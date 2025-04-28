@@ -1,6 +1,6 @@
 import { animation, colors } from "@/constants/styles";
 import type React from "react";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo } from "react";
 import { Animated, StyleSheet, View } from "react-native";
 
 interface AudioWaveformProps {
@@ -18,20 +18,24 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = ({
 	intensity = 0.8,
 	testID,
 }) => {
-	// Create animated values for each bar
-	const barValues = useRef<Animated.Value[]>(
+	// Create animated values for each bar - memoize to prevent recreation on re-renders
+	const barValues = useMemo(() => 
 		Array(barCount)
 			.fill(0)
 			.map(() => new Animated.Value(0.2)),
-	).current;
+		[barCount]
+	);
 
-	// Create phase animation
-	const phaseAnim = useRef(new Animated.Value(0)).current;
+	// Create phase animation - memoize to prevent recreation on re-renders
+	const phaseAnim = useMemo(() => new Animated.Value(0), []);
 
 	useEffect(() => {
+		let phaseAnimation: Animated.CompositeAnimation | null = null;
+		let listener: string | null = null;
+
 		if (isActive) {
 			// Continuous phase animation
-			const phaseAnimation = Animated.loop(
+			phaseAnimation = Animated.loop(
 				Animated.sequence([
 					Animated.timing(phaseAnim, {
 						toValue: 1,
@@ -50,7 +54,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = ({
 			phaseAnimation.start();
 
 			// Update bar heights based on phase
-			const listener = phaseAnim.addListener(({ value }) => {
+			listener = phaseAnim.addListener(({ value }) => {
 				barValues.forEach((anim, i) => {
 					const phase = (value + i / barCount) % 1;
 					const height =
@@ -58,43 +62,50 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = ({
 					anim.setValue(height);
 				});
 			});
+		} else {
+			// Animate to resting state
+			const staticHeights = Array(barCount)
+				.fill(0)
+				.map((_, i) => {
+					return 0.2 + 0.1 * Math.sin((i / barCount) * Math.PI * 2);
+				});
 
-			return () => {
-				phaseAnimation.stop();
-				phaseAnim.removeListener(listener);
-			};
-		}
-		// Animate to resting state
-		const staticHeights = Array(barCount)
-			.fill(0)
-			.map((_, i) => {
-				return 0.2 + 0.1 * Math.sin((i / barCount) * Math.PI * 2);
+			barValues.forEach((anim, i) => {
+				Animated.spring(anim, {
+					toValue: staticHeights[i],
+					...animation.springs.gentle,
+					useNativeDriver: true,
+				}).start();
 			});
+		}
 
-		barValues.forEach((anim, i) => {
-			Animated.spring(anim, {
-				toValue: staticHeights[i],
-				...animation.springs.gentle,
-				useNativeDriver: true,
-			}).start();
-		});
+		// Clean up animations and listeners
+		return () => {
+			if (phaseAnimation) {
+				phaseAnimation.stop();
+			}
+			if (listener) {
+				phaseAnim.removeListener(listener);
+			}
+		};
 	}, [isActive, barValues, phaseAnim, barCount, intensity]);
 
+	// Use key to force proper garbage collection when props change
+	const componentKey = `waveform-${barCount}-${isActive ? 'active' : 'inactive'}`;
+
 	return (
-		<View style={styles.container} testID={testID}>
+		<View style={styles.container} testID={testID} key={componentKey}>
 			<View style={styles.waveform}>
 				{barValues.map((anim, index) => {
 					const isCenter = index === Math.floor(barCount / 2);
 					const opacity = isCenter
 						? 1
 						: 0.5 +
-							0.5 * (1 - Math.abs((index - barCount / 2) / (barCount / 2)));
+						0.5 * (1 - Math.abs((index - barCount / 2) / (barCount / 2)));
 
-					// eslint-disable-next-line react/no-array-index-key
 					return (
 						<Animated.View
-							// biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
-							key={index}
+							key={`${componentKey}-bar-${index}`}
 							style={[
 								styles.bar,
 								{

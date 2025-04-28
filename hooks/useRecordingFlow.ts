@@ -67,6 +67,7 @@ class RecordingSession {
 	private _isAudioSetupComplete = false;
 	private _modeId: string;
 	private _operationInProgress = false;
+	private _modeSwitchInProgress = false;
 	private _stateChangeCallbacks: ((state: RecordingFlowState) => void)[] = [];
 	private _errorChangeCallbacks: ((error: string | null) => void)[] = [];
 	private _recordModeChangeCallbacks: ((mode: "separate" | "live") => void)[] =
@@ -129,7 +130,7 @@ class RecordingSession {
 	}
 
 	public get operationInProgress(): boolean {
-		return this._operationInProgress;
+		return this._operationInProgress || this._modeSwitchInProgress;
 	}
 
 	private setFlowState(state: RecordingFlowState): void {
@@ -222,9 +223,47 @@ class RecordingSession {
 		}
 	}
 
-	public setRecordMode(mode: "separate" | "live"): void {
-		this.setRecordModeInternal(mode);
-		this.setCurrentPartnerInternal(1);
+	public async setRecordMode(mode: "separate" | "live"): Promise<void> {
+		if (this._modeSwitchInProgress) {
+			console.warn(
+				"[RecordingSession] Mode switch already in progress. Ignoring request."
+			);
+			return;
+		}
+
+		if (this._recordMode === mode) {
+			console.log(`[RecordingSession] Mode already set to ${mode}. No change needed.`);
+			return;
+		}
+
+		// Set mode switch lock
+		this._modeSwitchInProgress = true;
+		console.log(`[RecordingSession] Starting mode switch to ${mode}`);
+
+		try {
+			// Wait for any pending uploads to complete or fail
+			const store = useStore.getState();
+			const uploadKeys = Object.keys(store.uploadProgress);
+			const inProgressUploads = uploadKeys.filter(
+				(key) => store.uploadProgress[key] > 0 && store.uploadProgress[key] < 100
+			);
+
+			if (inProgressUploads.length > 0) {
+				console.log(`[RecordingSession] Waiting for ${inProgressUploads.length} upload(s) to complete before mode switch`);
+				// Short timeout to allow uploads to settle (could be more sophisticated)
+				await new Promise(resolve => setTimeout(resolve, 1000));
+			}
+
+			// Now change the mode
+			this.setRecordModeInternal(mode);
+			this.setCurrentPartnerInternal(1);
+			console.log(`[RecordingSession] Mode switch to ${mode} complete`);
+		} catch (error) {
+			console.error(`[RecordingSession] Error during mode switch: ${error}`);
+		} finally {
+			// Always release the lock
+			this._modeSwitchInProgress = false;
+		}
 	}
 
 	private async setupAudio(): Promise<void> {
@@ -243,9 +282,9 @@ class RecordingSession {
 	}
 
 	public async toggleRecording(): Promise<void> {
-		if (this._operationInProgress) {
+		if (this._operationInProgress || this._modeSwitchInProgress) {
 			console.warn(
-				"[RecordingSession] Operation already in progress. Skipping toggleRecording request.",
+				"[RecordingSession] Operation or mode switch in progress. Skipping toggleRecording request.",
 			);
 			return;
 		}
