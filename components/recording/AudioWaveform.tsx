@@ -90,9 +90,11 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = ({
 						: 0.5 +
 							0.5 * (1 - Math.abs((index - barCount / 2) / (barCount / 2)));
 
+					// eslint-disable-next-line react/no-array-index-key
 					return (
 						<Animated.View
-							key={anim.toString()}
+							// biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
+							key={index}
 							style={[
 								styles.bar,
 								{
