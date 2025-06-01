@@ -28,7 +28,7 @@ export function RecordButton({
 	const glowScale = useSharedValue(1);
 
 	React.useEffect(() => {
-		if (isRecording || disabled) {
+		if (isRecording) {
 			glowOpacity.value = withRepeat(
 				withTiming(0.5, { duration: 1000 }),
 				-1,
@@ -40,10 +40,10 @@ export function RecordButton({
 				true,
 			);
 		} else {
-			glowOpacity.value = withSpring(0);
-			glowScale.value = withSpring(1);
+			glowOpacity.value = withTiming(0, { duration: 200 });
+			glowScale.value = withTiming(1, { duration: 200 });
 		}
-	}, [isRecording, disabled, glowOpacity, glowScale]);
+	}, [isRecording, glowOpacity, glowScale]);
 
 	const buttonStyle = useAnimatedStyle(() => ({
 		transform: [{ scale: scale.value }],
