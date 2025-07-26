@@ -50,11 +50,11 @@ This isn't incremental - it's a fundamental rethink of payment channel architect
 **Outcome**: Technical success, collaboration failure
 
 **The Disconnect**: 
-- Adimov built enterprise-grade distributed systems
-- Egor wanted "two primitive files written by hand"
+- Adimov built enterprise-grade distributed systems (the hard foundation)
+- Egor wanted "two primitive files written by hand" 
 - Payment misunderstanding: hourly work vs 5k "test task"
 
-**Critical Insight**: After adimov's month of work, Egor built complete MVP in 2 days (server.ts), showing his mental model made concrete.
+**Critical Insight**: Egor's 2-day MVP was built ON TOP OF adimov's month of distributed systems work - not a replacement, but a demonstration layer using adimov's consensus infrastructure as the foundation. Both contributions were necessary: adimov provided the hard technical base, Egor provided the clear expression of the innovation.
 
 ## Technical Assessment
 

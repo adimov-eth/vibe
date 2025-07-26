@@ -20,7 +20,8 @@ XLN (Extended Lightning Network) implements Egor Homakov's revolutionary **credi
 
 ### Critical Context
 - Month-long development effort (June 8 - July 8, 2025) produced working Byzantine Fault Tolerant consensus
-- Both versions successfully implement sophisticated distributed consensus supporting the innovation
+- adimov built the sophisticated distributed systems foundation (BFT consensus, cryptography, architecture)
+- Egor built his MVP demonstration ON TOP OF adimov's foundation work - both contributions were necessary
 - **Missing piece**: Neither fully implements the payment channel layer that makes XLN revolutionary
 - Collaboration ended due to communication issues, not technical capability
 
@@ -124,30 +125,78 @@ When principles conflict, optimize in this order:
 3. On-chain integration
 4. Developer SDK
 
-## Common Patterns
+## Code Patterns & Style
 
-### Consensus Processing
+### Function Design (following CODESTYLE.md)
 ```typescript
+// RO-RO pattern for 4+ parameters
+interface ProcessInputParams {
+  readonly env: Env
+  readonly replica: EntityReplica 
+  readonly input: EntityInput
+}
+
+// Result type for error handling
+type ProcessResult = 
+  | { ok: true; outputs: EntityInput[] }
+  | { ok: false; error: string }
+
 // Egor's direct approach with adimov's safety
-const processEntityInput = (
-  env: Env, 
-  replica: EntityReplica, 
-  input: EntityInput
-): EntityInput[] => {
-  // Validate cryptographically (adimov's pattern)
-  // Process directly (Egor's pattern)
-  // Return deterministic outputs
+const processEntityInput = (params: ProcessInputParams): ProcessResult => {
+  // Early validation (fail fast)
+  if (!params.replica) return { ok: false, error: 'Invalid replica' }
+  
+  // Core processing (clear intent)
+  const outputs = applyConsensusRules(params)
+  
+  return { ok: true, outputs }
 }
 ```
 
-### Channel Operations
+### Type Design (CODESTYLE.md principles)
 ```typescript
-// Core innovation - credit-line payments
+// Small, composable types with clear business intent
+type Address = `0x${string}`
+type Signature = `sig_${string}`
+
+// Make impossible states unrepresentable
 interface CreditLineChannel {
-  participants: [Address, Address]
-  balances: Record<Address, bigint>
-  creditLimits: Record<Address, bigint>  // Key innovation
-  reserved: Record<Address, bigint>
+  readonly participants: readonly [Address, Address]
+  readonly balances: Record<Address, bigint>
+  readonly creditLimits: Record<Address, bigint>  // Key innovation
+  readonly reserved: Record<Address, bigint>
+  readonly status: 'open' | 'disputed' | 'closing'
+}
+
+// Type factories for common patterns
+type ApiResponse<T> = 
+  | { ok: true; data: T }
+  | { ok: false; error: string }
+```
+
+### State Management
+```typescript
+// Pure functional by default (CODESTYLE.md)
+const updateChannelBalance = (
+  channel: CreditLineChannel,
+  participant: Address,
+  amount: bigint
+): CreditLineChannel => ({
+  ...channel,
+  balances: {
+    ...channel.balances,
+    [participant]: channel.balances[participant] + amount
+  }
+})
+
+// Mutation only when performance-critical (documented)
+const updateChannelBalanceMutable = (
+  channel: CreditLineChannel,
+  participant: Address, 
+  amount: bigint
+): void => {
+  // PERF: Hot path optimization - measured 2x faster
+  channel.balances[participant] += amount
 }
 ```
 
@@ -212,10 +261,10 @@ interface CreditLineChannel {
 ## Development Context
 
 ### Collaboration History
-- adimov: Built sophisticated distributed systems (enterprise approach)
-- Egor: Wanted simple, hand-written demonstration (clarity approach)
-- Both approaches have technical merit for different purposes
-- Synthesis needed: Egor's clarity + adimov's production quality
+- adimov: Built sophisticated distributed systems foundation (the hard technical base)
+- Egor: Built clear demonstration ON TOP OF adimov's work (clarity + expression of innovation)
+- Both contributions were necessary and complementary
+- Foundation established: adimov's consensus infrastructure + Egor's concept demonstration
 
 ### Technical Achievement
 - Successfully implemented Byzantine Fault Tolerant consensus
@@ -257,11 +306,39 @@ When starting work:
 4. Begin with Phase 1.1: Architecture synthesis
 5. Focus on implementing credit-line mechanics
 
+## Style Guidelines Summary
+
+### Key Insights from CODESTYLE.md Applied to XLN
+
+**The Core Principle**: *Optimize for the next developer who has to understand this code at 3 AM*
+
+**Applied to XLN Consensus**:
+- Byzantine fault tolerance logic must be crystal clear
+- Payment channel innovation should be immediately understandable
+- Complex cryptographic operations deserve explanatory comments
+- Performance optimizations need measurement justification
+
+**Applied to Function Design**:
+- Use Result types for consensus operations that can fail
+- Early returns for validation (fail fast pattern)
+- RO-RO pattern for complex consensus parameters
+- Single-purpose functions under 80 lines
+
+**Applied to Type Safety**:
+- Make invalid channel states unrepresentable
+- Use template literal types for address validation
+- Explicit error types for different failure modes
+- Progressive type refinement for consensus flow
+
 ## Remember
 
-This is genuinely innovative work that deserves completion. The technical merit stands regardless of collaboration history. Focus on building the missing payment channel layer that makes XLN revolutionary.
+This is genuinely innovative work that deserves completion. The technical merit stands regardless of collaboration history. 
 
-**Core Mission**: Implement Egor's credit-line payment channel innovation with production-grade quality, demonstrating clear superiority over Lightning Network.
+**Code Quality Mission**: Following CODESTYLE.md principles, write code that the next developer can understand and modify safely. The consensus layer complexity is necessary - make it as clear as possible.
+
+**Core Technical Mission**: Implement Egor's credit-line payment channel innovation with production-grade quality, demonstrating clear superiority over Lightning Network.
+
+**Success Metric**: When a new developer can understand the payment channel innovation and contribute to it within a day of reading the codebase.
 
 ---
 

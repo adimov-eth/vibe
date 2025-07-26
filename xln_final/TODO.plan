@@ -1,0 +1,278 @@
+# XLN Final Implementation Plan
+*Pragmatic extraction and payment channel innovation*
+
+## Strategic Decision - Revised
+
+**Foundation**: Keep `xln/src/server.ts` working, extract into logical domains
+**Architecture**: Apply `xln01/` crypto patterns and clean interfaces  
+**Standards**: Follow `CODESTYLE_OPTIMAL.md` (optimize for actual work, not metrics)
+**Innovation**: Add revolutionary credit-line payment channel layer
+**Mission**: Ship technology that changes how payment channels work
+
+## Phase 1: Pragmatic Extraction (Week 1)
+
+### 1.1 Consensus Domain Extraction
+**Source**: `xln/src/server.ts:1145-1443` (processEntityInput function - 300 lines)
+**Target**: `src/consensus/engine.ts` (400-500 lines with related functions)
+**Standards**: `CODESTYLE_OPTIMAL.md` - optimize for consensus debugging at 3 AM
+**References**: 
+- `xln01/src/core/entity.ts` (clean functional patterns)
+- `XLN_RESTORATION_PLAN.md:30-46` (consensus layer migration strategy)
+
+```typescript
+// Optimize for debugging consensus flows 
+type ConsensusResult = 
+  | { ok: true; outputs: EntityInput[] }
+  | { ok: false; error: string; context: string }
+
+// Keep complex consensus logic together - don't fragment BFT algorithms
+const processEntityInput = (params: {
+  readonly env: Env
+  readonly replica: EntityReplica 
+  readonly input: EntityInput
+}): ConsensusResult
+```
+
+### 1.2 Entity Management Domain 
+**Source**: `xln/src/server.ts:190-451` (entity functions - 260 lines)
+**Target**: `src/entities/` (split into logical boundaries - 300-400 lines each)
+**Strategy**: Keep entity types together by domain, not by implementation detail
+**Modules**:
+- `lazy.ts` - Hash-based entities (free, instant)
+- `numbered.ts` - Blockchain-registered entities (gas cost)
+- `named.ts` - Admin-assigned entities (premium)
+
+### 1.3 Blockchain Integration Domain
+**Source**: `xln/src/server.ts:453-690` (Ethereum functions - 240 lines)  
+**Target**: `src/blockchain/` (400-500 lines total)
+**Strategy**: Keep blockchain concerns separate from consensus
+**Modules**:
+- `ethereum.ts` - Contract integration, real signing
+- `jurisdictions.ts` - Multi-jurisdiction configuration
+
+### 1.4 Governance Domain
+**Source**: `xln/src/server.ts:992-1143` (proposal/voting - 150 lines)
+**Target**: `src/governance/` (300-400 lines total)
+**Strategy**: Complete governance domain in one place
+**Modules**:
+- `voting.ts` - Weighted voting mechanics and thresholds
+- `execution.ts` - Proposal execution and collective actions
+
+## Phase 2: Real Cryptography (Week 1)
+
+### 2.1 Production Signature System
+**Source**: `xln01/src/crypto/bls.ts` (working BLS12-381 implementation)
+**Target**: `src/crypto/` (200-300 lines)
+**Priority**: Replace mock signatures that currently look like `sig_${signerId}_${hash}`
+**Strategy**: Port proven crypto, maintain browser WebAssembly compatibility
+
+### 2.2 Signature Integration
+**Update**: All signature creation/validation in consensus engine
+**Keep**: Deterministic signature ordering for Byzantine consensus  
+**Add**: Real aggregate signature verification for frame commits
+
+## Phase 3: State Management (Week 1)
+
+### 3.1 Environment Architecture
+**Source**: `xln/src/server.ts:721-780` (Env interface)
+**Target**: `src/core/environment.ts`
+**Keep**: Time machine debugging, snapshot system
+**Improve**: Modularize according to CODESTYLE.md
+
+### 3.2 Persistence Layer
+**Source**: `xln/src/server.ts:94-113` (LevelDB integration)
+**Target**: `src/persistence/storage.ts`
+**Features**: Snapshot encoding/decoding, database management
+
+## Phase 4: Payment Channel Innovation (Weeks 2-3)
+
+### 4.1 Credit-Line Channel Data Structures
+**Reference**: `XLN_RESTORATION_PLAN.md:65-83`
+**Target**: `src/channels/credit-line.ts`
+
+```typescript
+interface CreditLineChannel {
+  readonly id: string
+  readonly participants: readonly [Address, Address] 
+  readonly balances: Record<Address, bigint>
+  readonly creditLimits: Record<Address, bigint>  // CORE INNOVATION
+  readonly reserved: Record<Address, bigint>
+  readonly nonce: bigint
+  readonly status: 'open' | 'disputed' | 'closing'
+}
+```
+
+### 4.2 Channel Operations
+**Target**: `src/channels/operations.ts`
+**Key Innovation**: Receivers can accept payments without pre-funding
+
+```typescript
+// Revolutionary: No pre-funding required for receiver!
+const receivePayment = (
+  channel: CreditLineChannel, 
+  amount: bigint, 
+  sender: Address
+): ChannelResult<CreditLineChannel>
+```
+
+### 4.3 Fractional Reserve Hubs
+**Target**: `src/hubs/fractional-reserve.ts`
+**Innovation**: 20% reserves vs 100% traditional
+**Reference**: `memory.md:12-14` (80% capital efficiency improvement)
+
+### 4.4 Payment Routing
+**Target**: `src/routing/credit-network.ts`
+**Goal**: 99.9% success rate vs Lightning's 70%
+
+## Phase 5: Network Layer (Week 3)
+
+### 5.1 P2P Transport
+**Target**: `src/network/transport.ts`
+**Start**: WebSocket for demos
+**Future**: libp2p for production
+
+### 5.2 Message Protocol
+**Source**: `xln01/src/codec/rlp.ts`
+**Target**: `src/network/protocol.ts`
+**Features**: RLP encoding, versioning, authentication
+
+## Phase 6: Demonstration Layer (Week 4)
+
+### 6.1 Success Rate Demo
+**Target**: `src/demo/comparison.ts`
+**Goal**: Prove 99.9% vs Lightning's 70% success rate
+**Reference**: `XLN_RESTORATION_PLAN.md:175-182`
+
+### 6.2 Capital Efficiency Demo  
+**Target**: `src/demo/efficiency.ts`
+**Goal**: Show 80% capital efficiency improvement
+
+## Key Architectural Principles - Revised
+
+### From CODESTYLE_OPTIMAL.md:
+- **Files: 300-800 lines** - Complete domains, not arbitrary fragments
+- **Functions: 20-150 lines** - Optimize for clarity, not line counting
+- **Domain-driven organization** - Group by business problems
+- **Developer experience first** - Fast debugging, easy testing, safe changes
+- **Mission-focused** - Ship revolutionary payment channels
+
+### From xln01/ (Clean Patterns):
+- Real cryptographic security (BLS12-381)
+- Clean interfaces and proper TypeScript
+- Pure functional consensus logic where possible
+- Comprehensive Byzantine fault testing
+
+### From xln/ (Comprehensive Features):
+- Multi-entity concurrent processing with time machine debugging
+- Complete blockchain integration with multi-jurisdiction support  
+- Sophisticated governance with weighted voting
+- Browser compatibility and real persistence
+- Working demonstration of complex distributed systems
+
+## File Structure
+
+```
+src/
+├── consensus/           # BFT consensus (from xln/server.ts + xln01/entity.ts)
+│   ├── engine.ts       # Core consensus logic (<80 lines per function)
+│   ├── validator.ts    # Signature validation  
+│   └── types.ts        # Consensus data structures
+├── channels/           # CORE INNOVATION - Credit-line channels
+│   ├── credit-line.ts  # Credit-line channel implementation
+│   ├── operations.ts   # Channel open/close/payment operations
+│   └── routing.ts      # Payment routing algorithms
+├── entities/           # Entity management (from xln/server.ts)
+│   ├── manager.ts      # Entity creation and resolution
+│   ├── lazy.ts         # Hash-based lazy entities
+│   ├── numbered.ts     # Blockchain-registered entities
+│   └── named.ts        # Admin-assigned named entities  
+├── blockchain/         # On-chain integration (from xln/server.ts)
+│   ├── ethereum.ts     # Ethereum/EntityProvider integration
+│   ├── contracts.ts    # Contract interfaces
+│   └── jurisdictions.ts # Multi-jurisdiction support
+├── crypto/             # Real cryptography (from xln01/crypto/)
+│   ├── signatures.ts   # BLS12-381 signatures
+│   └── keys.ts         # Key management
+├── governance/         # Voting and proposals (from xln/server.ts)
+│   ├── proposals.ts    # Proposal creation and execution
+│   └── voting.ts       # Weighted voting mechanics
+├── hubs/               # NEW - Fractional reserve hubs
+│   ├── fractional-reserve.ts # 20% reserve mechanics
+│   └── routing.ts      # Hub-to-hub routing
+├── persistence/        # State management (from xln/server.ts)
+│   ├── storage.ts      # LevelDB persistence
+│   ├── snapshots.ts    # Time machine implementation
+│   └── encoding.ts     # Snapshot serialization
+├── network/            # P2P layer (from xln01/ + new)
+│   ├── transport.ts    # WebSocket/libp2p transport
+│   ├── protocol.ts     # Message protocol + RLP
+│   └── discovery.ts    # Peer discovery
+├── core/               # Environment and coordination (from xln/server.ts)
+│   ├── environment.ts  # Env container and ticks
+│   ├── server.ts       # Global coordination
+│   └── types.ts        # Core data structures
+└── demo/               # Clear demonstrations
+    ├── comparison.ts   # Success rate comparison (99.9% vs 70%)
+    ├── efficiency.ts   # Capital efficiency demo
+    └── examples.ts     # Usage examples
+```
+
+## Success Metrics
+
+### Technical (from XLN_RESTORATION_PLAN.md:229-236):
+- ✅ 99.9% payment success rate (vs Lightning's 70%)
+- ✅ 80% capital efficiency improvement  
+- ✅ 10,000+ TPS sustained throughput
+- ✅ Sub-second payment finality
+- ✅ Zero custody for receivers (credit-line channels)
+
+### Code Quality (from CODESTYLE.md:208-214):
+- ✅ New developers can contribute within a day
+- ✅ Code passes all Byzantine fault tolerance tests  
+- ✅ Payment channel innovation immediately understandable
+- ✅ Functions under 80 lines, files under 800 lines
+- ✅ Follows Result<T> error handling patterns
+
+## Critical References
+
+**Primary Sources**:
+- `xln/src/server.ts` - Complete feature reference (2000+ lines to extract)
+- `xln01/src/core/entity.ts` - Clean architecture pattern  
+- `xln01/src/crypto/bls.ts` - Real cryptography implementation
+
+**Standards**:
+- `CODESTYLE.md` - Code quality and architectural principles
+- `XLN_RESTORATION_PLAN.md` - Phase-by-phase implementation guide
+- `spec.md` - Technical specification and future roadmap
+
+**Context**:
+- `memory.md` - Investigation findings and synthesis opportunity
+- `CLAUDE.md` - Project context and development guidelines
+
+## Next Actions
+
+1. **Start with consensus module** - Extract `processEntityInput` from xln/server.ts
+2. **Apply CODESTYLE.md patterns** - Break into <80 line functions  
+3. **Port crypto from xln01/** - Replace mock signatures
+4. **Add credit-line channels** - The missing innovation layer
+5. **Maintain xln/ features** - Blockchain integration, governance, time machine
+
+## The Pragmatic Reality
+
+**This isn't starting over**. This is **extracting** xln/'s comprehensive 2000-line system into logical domains, adding real crypto from xln01/, then building the revolutionary payment channel layer.
+
+**The working foundation**:
+- Byzantine consensus ✅ (works in xln/server.ts)
+- Blockchain integration ✅ (works with real contracts)  
+- Governance system ✅ (weighted voting, proposals)
+- Time machine debugging ✅ (complete history replay)
+- Multi-jurisdiction support ✅ (Ethereum, Polygon, BSC)
+
+**The missing innovation**:
+- Credit-line payment channels (receivers accept without pre-funding)
+- Fractional-reserve hubs (20% reserves vs 100% traditional)
+- Payment routing achieving 99.9% success vs Lightning's 70%
+
+**The synthesis**: Keep what works, extract for maintainability, add what's missing.
+
+The foundation exists. The innovation is real. Now we make it complete.

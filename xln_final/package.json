@@ -1,0 +1,46 @@
+{
+  "name": "xln-final",
+  "version": "1.0.0",
+  "description": "XLN Final - Revolutionary Credit-Line Payment Channels",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "demo": "bun run src/demo/comparison.ts",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write src/**/*.ts"
+  },
+  "keywords": [
+    "payment-channels",
+    "lightning-network", 
+    "consensus",
+    "cryptocurrency",
+    "blockchain",
+    "bft"
+  ],
+  "author": {
+    "name": "XLN Contributors",
+    "email": "dev@xln.finance"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@noble/curves": "^1.4.0",
+    "@noble/hashes": "^1.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "bun-types": "latest",
+    "typescript": "^5.5.0",
+    "eslint": "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^7.13.0",
+    "@typescript-eslint/parser": "^7.13.0",
+    "prettier": "^3.3.0"
+  },
+  "engines": {
+    "bun": ">=1.0.0",
+    "node": ">=18.0.0"
+  }
+}
