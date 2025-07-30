@@ -1,7 +1,7 @@
 {
   "name": "xln-final",
   "version": "1.0.0",
-  "description": "XLN Final - Revolutionary Credit-Line Payment Channels",
+  "description": "XLN - Credit-Line Payment Channels",
   "type": "module",
   "scripts": {
     "dev": "bun run --watch src/index.ts",
@@ -15,7 +15,7 @@
   },
   "keywords": [
     "payment-channels",
-    "lightning-network", 
+    "lightning-network",
     "consensus",
     "cryptocurrency",
     "blockchain",
@@ -28,7 +28,8 @@
   "license": "MIT",
   "dependencies": {
     "@noble/curves": "^1.4.0",
-    "@noble/hashes": "^1.4.0"
+    "@noble/hashes": "^1.4.0",
+    "ethers": "^6.15.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
