@@ -135,19 +135,21 @@ export const XLN_CONCEPTS: Concept[] = [
     name: 'Dispute Resolution',
     critical: false,
     locations: {
-      xln: ['old_src/types/Subchannel.ts:disputeNonce', 'old_src/types/Subchannel.ts:proposedEvents']
+      xln: ['old_src/types/Subchannel.ts:disputeNonce', 'old_src/types/Subchannel.ts:proposedEvents'],
+      xln_final: ['src/core/dispute.ts', 'src/demo-dispute.ts']
     },
-    status: 'missing',
-    notes: 'No mechanism for handling channel disputes or state conflicts'
+    status: 'present',
+    notes: '✓ IMPLEMENTED: Asynchronous state proposals with counter-proposals and escalation tracking'
   },
   {
     name: 'Multi-Chain Support',
     critical: false,
     locations: {
-      xln: ['old_src/types/Subchannel.ts:chainId', 'old_src/app/Transition.ts:chainId']
+      xln: ['old_src/types/Subchannel.ts:chainId', 'old_src/app/Transition.ts:chainId'],
+      xln_final: ['src/core/multi-chain.ts', 'src/demo-multi-chain.ts']
     },
-    status: 'missing',
-    notes: 'Each subchannel can be on different chain. Cross-chain atomic swaps impossible now'
+    status: 'present',
+    notes: '✓ IMPLEMENTED: Cross-chain atomic swaps without bridges, chain-specific credit limits'
   }
 ]
 
