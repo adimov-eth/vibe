@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>XLN Merchant - Accept Payments with Zero Deposit</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      max-width: 400px;
+      margin: 0 auto;
+      padding: 20px;
+      text-align: center;
+    }
+    .balance {
+      font-size: 48px;
+      font-weight: bold;
+      color: #22c55e;
+      margin: 20px 0;
+    }
+    .credit {
+      font-size: 18px;
+      color: #666;
+      margin-bottom: 30px;
+    }
+    #qr {
+      margin: 30px auto;
+    }
+    .status {
+      padding: 10px;
+      border-radius: 8px;
+      margin: 20px 0;
+      font-weight: bold;
+    }
+    .success {
+      background: #dcfce7;
+      color: #166534;
+    }
+    .setup {
+      text-align: left;
+      background: #f3f4f6;
+      padding: 20px;
+      border-radius: 8px;
+      margin: 20px 0;
+    }
+    input {
+      width: 100%;
+      padding: 10px;
+      margin: 5px 0;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      background: #3b82f6;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #2563eb;
+    }
+  </style>
+</head>
+<body>
+  <h1>🌮 XLN Merchant</h1>
+  
+  <div id="setup" class="setup">
+    <h3>Quick Setup (30 seconds)</h3>
+    <input type="text" id="name" placeholder="Business name" value="Maria's Taco Truck">
+    <input type="number" id="credit" placeholder="Credit limit" value="1000">
+    <button onclick="register()">Start Accepting Payments</button>
+  </div>
+
+  <div id="merchant" style="display: none;">
+    <h2 id="merchantName"></h2>
+    <div class="balance">$<span id="balance">0</span></div>
+    <div class="credit">Credit available: $<span id="available">0</span></div>
+    
+    <canvas id="qr"></canvas>
+    
+    <div id="status"></div>
+    
+    <p style="color: #666; font-size: 14px;">
+      Accepting payments with ZERO deposit!<br>
+      Powered by XLN Credit Lines
+    </p>
+  </div>
+
+  <script>
+    const HUB_URL = 'http://localhost:3000'
+    const WS_URL = 'ws://localhost:3000'
+    let merchantAddress = null
+    let ws = null
+
+    // Check if already registered
+    const saved = localStorage.getItem('xln_merchant')
+    if (saved) {
+      const data = JSON.parse(saved)
+      merchantAddress = data.address
+      showMerchant(data)
+    }
+
+    async function register() {
+      const name = document.getElementById('name').value
+      const creditLimit = document.getElementById('credit').value
+      
+      const res = await fetch(`${HUB_URL}/api/merchants`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, creditLimit: parseInt(creditLimit) })
+      })
+      
+      const data = await res.json()
+      if (data.success) {
+        merchantAddress = data.merchant.address
+        localStorage.setItem('xln_merchant', JSON.stringify(data.merchant))
+        showMerchant(data.merchant)
+      }
+    }
+
+    function showMerchant(merchant) {
+      document.getElementById('setup').style.display = 'none'
+      document.getElementById('merchant').style.display = 'block'
+      document.getElementById('merchantName').textContent = merchant.name
+      document.getElementById('available').textContent = merchant.creditLimit
+      
+      // Generate QR code for payment
+      const paymentUrl = `${HUB_URL}/pay/${merchant.address}`
+      QRCode.toCanvas(document.getElementById('qr'), paymentUrl, {
+        width: 256,
+        margin: 2
+      })
+      
+      // Connect WebSocket for realtime updates
+      connectWebSocket()
+      
+      // Load current balance
+      loadBalance()
+    }
+
+    function connectWebSocket() {
+      ws = new WebSocket(`${WS_URL}/${merchantAddress}`)
+      
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data)
+        if (data.type === 'payment') {
+          // Update balance
+          document.getElementById('balance').textContent = data.newBalance
+          document.getElementById('available').textContent = 
+            parseInt(document.getElementById('available').textContent) - data.amount
+          
+          // Show success message
+          const status = document.getElementById('status')
+          status.className = 'status success'
+          status.textContent = `💰 Received $${data.amount}!`
+          
+          // Play sound
+          new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBTGHy+/gizYGHWq+7OysWA4JUqzn77hYFArBQboAAA==').play()
+        }
+      }
+    }
+
+    async function loadBalance() {
+      const res = await fetch(`${HUB_URL}/api/merchants/${merchantAddress}`)
+      const data = await res.json()
+      document.getElementById('balance').textContent = data.balance
+      document.getElementById('available').textContent = data.availableCredit
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "xln-mvp",
+  "version": "0.1.0",
+  "description": "Maria's Taco Truck - Zero lockup payment acceptance",
+  "type": "module",
+  "scripts": {
+    "demo": "bun run src/channel.ts",
+    "hub": "bun run hub/server.ts",
+    "dev": "bun --hot run hub/server.ts"
+  },
+  "dependencies": {
+    "ethers": "^6.13.4"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

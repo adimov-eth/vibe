@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Pay with XLN</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      max-width: 400px;
+      margin: 0 auto;
+      padding: 20px;
+      text-align: center;
+    }
+    .amount-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin: 20px 0;
+    }
+    button {
+      padding: 20px;
+      font-size: 24px;
+      border: 2px solid #3b82f6;
+      background: white;
+      color: #3b82f6;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #3b82f6;
+      color: white;
+    }
+    .pay-button {
+      width: 100%;
+      background: #22c55e;
+      color: white;
+      border: none;
+      font-size: 20px;
+      margin-top: 20px;
+    }
+    .pay-button:hover {
+      background: #16a34a;
+    }
+    input {
+      width: 100%;
+      padding: 15px;
+      font-size: 24px;
+      text-align: center;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>💸 Pay Merchant</h1>
+  
+  <div id="merchantInfo"></div>
+  
+  <input type="number" id="amount" placeholder="0" value="5">
+  
+  <div class="amount-grid">
+    <button onclick="setAmount(1)">$1</button>
+    <button onclick="setAmount(5)">$5</button>
+    <button onclick="setAmount(10)">$10</button>
+    <button onclick="setAmount(20)">$20</button>
+  </div>
+  
+  <button class="pay-button" onclick="pay()">Pay Now</button>
+  
+  <div id="status"></div>
+
+  <script>
+    const HUB_URL = 'http://localhost:3000'
+    
+    // Get merchant address from URL
+    const merchantAddress = window.location.pathname.split('/').pop()
+    
+    // Load merchant info
+    loadMerchant()
+    
+    async function loadMerchant() {
+      const res = await fetch(`${HUB_URL}/api/merchants/${merchantAddress}`)
+      const data = await res.json()
+      document.getElementById('merchantInfo').innerHTML = `
+        <h2>${data.name}</h2>
+        <p style="color: #666;">Balance: $${data.balance} / $${data.creditLimit}</p>
+      `
+    }
+    
+    function setAmount(amount) {
+      document.getElementById('amount').value = amount
+    }
+    
+    async function pay() {
+      const amount = parseInt(document.getElementById('amount').value)
+      
+      const res = await fetch(`${HUB_URL}/api/pay/${merchantAddress}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount })
+      })
+      
+      const data = await res.json()
+      const status = document.getElementById('status')
+      
+      if (data.success) {
+        status.innerHTML = `
+          <div style="background: #dcfce7; color: #166534; padding: 20px; border-radius: 8px; margin-top: 20px;">
+            <h3>✅ Payment Successful!</h3>
+            <p>Sent $${amount} to ${data.payment.merchant}</p>
+          </div>
+        `
+        
+        // Reload merchant info
+        setTimeout(loadMerchant, 1000)
+      } else {
+        status.innerHTML = `
+          <div style="background: #fee2e2; color: #991b1b; padding: 20px; border-radius: 8px; margin-top: 20px;">
+            <h3>❌ Payment Failed</h3>
+            <p>${data.error}</p>
+          </div>
+        `
+      }
+    }
+  </script>
+</body>
+</html>
