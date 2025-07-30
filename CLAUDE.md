@@ -264,7 +264,6 @@ const updateChannelBalanceMutable = (
 
 ### Demo Requirements
 
-- Success rate comparison: XLN 99.9% vs Lightning 70%
 - Capital efficiency visualization
 - Real-time payment routing
 - Cross-chain payment examples
@@ -274,7 +273,8 @@ const updateChannelBalanceMutable = (
 
 ### Cryptographic Requirements
 
-- BLS12-381 for aggregate signatures (not mocks)
+- secp256k1/ECDSA (correct for EVM compatibility)
+- Aggregate signatures (not mocks)
 - Proper key management for demos
 - Deterministic signature ordering
 - Replay attack prevention
@@ -290,17 +290,8 @@ const updateChannelBalanceMutable = (
 
 ### Throughput
 
-- 10,000+ TPS sustained
-- Sub-second payment finality
 - Efficient signature aggregation
 - Minimal network overhead
-
-### Capital Efficiency
-
-- 80% improvement over Lightning
-- 20% hub reserves vs 100% traditional
-- Zero receiver pre-funding required
-- Optimal routing through credit networks
 
 ## Integration Points
 

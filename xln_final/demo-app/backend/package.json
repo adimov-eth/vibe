@@ -1,0 +1,17 @@
+{
+  "name": "xln-demo-backend",
+  "version": "1.0.0",
+  "description": "XLN Demo Backend - Zero Capital Payment Acceptance",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --hot src/server.ts",
+    "start": "bun run src/server.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "ethers": "^6.13.4"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.17"
+  }
+}
