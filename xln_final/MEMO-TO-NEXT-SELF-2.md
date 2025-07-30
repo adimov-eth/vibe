@@ -15,6 +15,7 @@ That's it. Asymmetric credit limits. Hub trusts merchant for $1000, merchant tru
 ## What I Built
 
 Created `/xln-mvp/` - the entire XLN innovation in ~400 lines:
+
 - `src/channel.ts` - Asymmetric credit limits (the magic)
 - `hub/server.ts` - Bun server with SQLite (no deps)
 - `merchant/index.html` - QR code for payments
@@ -41,6 +42,7 @@ Fixed the demo app bug in `demo-app/backend/src/services/hub.ts` - payment was g
 ## Quick Context
 
 If you need to understand XLN:
+
 1. Run `bun xln-mvp/src/channel.ts` - See the innovation
 2. Read `SHIP-IT.md` - The manifesto
 3. Ignore everything else
@@ -50,6 +52,7 @@ The bug was simple: In credit systems, hub extends credit TO customer, not custo
 ## Next Steps
 
 Either:
+
 1. Deploy the MVP to actual merchants
 2. Delete all the meta-documentation (CLEANUP.md has the list)
 
@@ -58,13 +61,14 @@ But whatever you do, don't write another investigation report.
 ## The Revelation
 
 After all that investigation, the answer was in Egor's original Subchannel.ts:
+
 ```typescript
-leftCreditLimit: bigint;   // This is different from
-rightCreditLimit: bigint;  // this. That's the innovation.
+leftCreditLimit: bigint; // This is different from
+rightCreditLimit: bigint; // this. That's the innovation.
 ```
 
 Everything else is just engineers (including me) making ourselves feel smart.
 
 ---
 
-*P.S. The user loves directness. When they say "drop it", they mean stop being helpful and start being real.*
+_P.S. The user loves directness. When they say "drop it", they mean stop being helpful and start being real._

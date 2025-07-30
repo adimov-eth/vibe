@@ -7,6 +7,7 @@ Replace Western Union's $30B remittance market with credit-based instant payment
 ## Phase 0: Right Now (Week 1)
 
 ### Deploy First Hub
+
 ```bash
 # Get a $5/month VPS (Hetzner/Vultr)
 ssh root@your-server
@@ -17,7 +18,9 @@ bun run hub/server.ts
 ```
 
 ### Find 10 Real Merchants
+
 Target:
+
 - Food trucks near tech offices
 - Coffee shops with Square/Toast pain
 - Immigrant-owned shops with remittance needs
@@ -26,6 +29,7 @@ Target:
 Pitch: "Accept payments instantly. No equipment. No deposit. No fees for 6 months."
 
 ### Make It Work
+
 1. Help them create QR code stickers
 2. Put your personal phone number on the sticker
 3. When something breaks, fix it immediately
@@ -38,23 +42,26 @@ Success metric: One merchant saying "This is better than Square"
 ### The 100 Merchant Sprint
 
 **Week 1-2: Onboarding Flow**
+
 - Replace manual setup with self-serve
 - SMS verification (Twilio)
 - Automatic QR code generation
 - Print-ready sticker templates
 
 **Week 3-4: Merchant Dashboard**
+
 ```typescript
 // What merchants actually need
 interface MerchantDashboard {
-  todaysSales: number
-  weeklyTrend: 'up' | 'down' | 'flat'
-  instantPayout: () => Promise<void>  // Via local P2P trader
-  simpleReceipts: Receipt[]
+  todaysSales: number;
+  weeklyTrend: "up" | "down" | "flat";
+  instantPayout: () => Promise<void>; // Via local P2P trader
+  simpleReceipts: Receipt[];
 }
 ```
 
 **Week 5-8: Kill the Friction**
+
 - 2-tap refunds
 - Daily auto-settlement to bank
 - Spanish/Vietnamese/Mandarin UI
@@ -62,6 +69,7 @@ interface MerchantDashboard {
 
 **Week 9-12: Prove Economics**
 Track:
+
 - Payment volume per merchant
 - Churn rate
 - Credit utilization
@@ -70,6 +78,7 @@ Track:
 ### The Hub Economics
 
 Your first hub needs $10k collateral:
+
 - Supports 50 merchants @ $1k credit each (5x leverage)
 - Expected revenue: 0.5% of volume = $500/month at $100k volume
 - Break-even: ~20 active merchants
@@ -79,6 +88,7 @@ Your first hub needs $10k collateral:
 ### Add P2P Traders
 
 Find people already doing informal remittance:
+
 - Western Union agents
 - Hawala operators
 - Crypto P2P traders
@@ -97,12 +107,13 @@ const paySupplier = async (
 ) => {
   // Merchant uses their received funds to pay suppliers
   // No bank involved, instant settlement
-}
+};
 ```
 
 ### Launch Second City
 
 Pick based on:
+
 1. Existing P2P trader relationships
 2. High immigrant population
 3. Expensive banking
@@ -114,6 +125,7 @@ Good targets: LA, Houston, Miami
 ### The Remittance Play
 
 UK → Nigeria flow:
+
 1. Nigerian merchants get credit lines
 2. UK senders pay UK hub
 3. UK hub owes Nigerian hub
@@ -123,21 +135,24 @@ UK → Nigeria flow:
 ### Required Infrastructure
 
 **Legal Structure**
+
 - Not money transmission (credit extension)
 - Partner with licensed P2P traders
 - Terms of Service that work
 
 **Hub Network**
+
 ```typescript
 interface HubNetwork {
-  hubs: Map<Country, Hub[]>
-  liquidityPools: Map<Pair, LiquidityPool>
-  settlementSchedule: 'daily' | 'weekly'
-  collateralRequirements: bigint
+  hubs: Map<Country, Hub[]>;
+  liquidityPools: Map<Pair, LiquidityPool>;
+  settlementSchedule: "daily" | "weekly";
+  collateralRequirements: bigint;
 }
 ```
 
 **Risk Management**
+
 - Geographic exposure limits
 - FX hedging via stablecoin pools
 - Hub credit scoring
@@ -148,12 +163,14 @@ interface HubNetwork {
 ### Open Source Hub Software
 
 Let anyone run a hub:
+
 ```bash
 # One-click hub deployment
 curl -sSL https://xln.network/install.sh | bash
 ```
 
 Requirements:
+
 - $10k collateral (on-chain)
 - KYC/AML capability
 - Local banking relationship
@@ -161,18 +178,20 @@ Requirements:
 ### Developer Ecosystem
 
 **Merchant SDK**
+
 ```javascript
 // Shopify/WooCommerce/Square plugins
-const xln = require('@xln/merchant-sdk')
+const xln = require("@xln/merchant-sdk");
 
 xln.acceptPayment({
-  amount: 50.00,
-  currency: 'USD',
-  description: 'Two tacos'
-})
+  amount: 50.0,
+  currency: "USD",
+  description: "Two tacos",
+});
 ```
 
 **Mobile Apps**
+
 - React Native merchant app
 - Flutter customer wallet
 - Hub operator dashboard
@@ -187,16 +206,19 @@ xln.acceptPayment({
 ## Phase 5: Beyond Payments (Year 3+)
 
 ### Merchant Working Capital
+
 - Auto-approve loans based on payment history
 - Daily repayment from sales
 - No paperwork, instant funding
 
 ### Supply Chain Finance
+
 - Suppliers extend credit to buyers
 - Buyers pay from future sales
 - No banks, no factoring companies
 
 ### The Full Stack
+
 ```
 Traditional Banking          →    XLN Network
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -228,18 +250,21 @@ Letters of Credit           →    Smart contract escrow
 ## Metrics That Matter
 
 ### Phase 0-1 (Prove It Works)
+
 - Merchants onboarded
 - Weekly payment volume
 - Merchant retention (>90%)
 - Time to onboard (<3 minutes)
 
 ### Phase 2-3 (Prove It Scales)
+
 - Payment success rate (>99.9%)
 - Hub utilization rate
 - Cross-border volume
 - Settlement efficiency
 
 ### Phase 4-5 (Prove It Wins)
+
 - Cost per transaction (<$0.01)
 - Global transfer time (<10 seconds)
 - Network transaction volume
@@ -248,17 +273,20 @@ Letters of Credit           →    Smart contract escrow
 ## The Team You Need
 
 ### Now (1-3 people)
+
 - Builder who can code and talk to merchants
 - Ops person who knows payments/compliance
 - Maybe a designer who gets simplicity
 
 ### At 100 Merchants (5-10 people)
+
 - Mobile developers
 - Customer support (Spanish speaking)
 - Hub operations manager
 - Compliance officer
 
 ### At Scale (50+ people)
+
 - Hub partnership team
 - Risk/fraud team
 - Multiple regional teams
@@ -267,6 +295,7 @@ Letters of Credit           →    Smart contract escrow
 ## Go-to-Market Playbook
 
 ### Week 1: First Merchant
+
 1. Walk into Maria's Taco Truck
 2. "Want to accept card payments with no equipment?"
 3. Set up in 3 minutes
@@ -274,6 +303,7 @@ Letters of Credit           →    Smart contract escrow
 5. Check in daily
 
 ### Month 1: First Ten
+
 1. All within walking distance
 2. Visit every day
 3. Fix problems immediately
@@ -281,6 +311,7 @@ Letters of Credit           →    Smart contract escrow
 5. Ask for referrals
 
 ### Month 3: First Hundred
+
 1. Hire Spanish-speaking support
 2. Create WhatsApp group for merchants
 3. Weekly webinars on maximizing sales
@@ -288,6 +319,7 @@ Letters of Credit           →    Smart contract escrow
 5. Local Facebook ads
 
 ### Month 6: First Thousand
+
 1. Partner with merchant associations
 2. Sponsor local events
 3. Radio ads on Spanish stations
@@ -342,4 +374,4 @@ The code is done. The innovation is real. Now go find Maria and change how money
 
 ---
 
-*Remember: Western Union moves $150B annually at 7% fees. We need 1% of that at 0.5% fees to build a unicorn. The market is there. The solution works. You just need to ship.*
+_Remember: Western Union moves $150B annually at 7% fees. We need 1% of that at 0.5% fees to build a unicorn. The market is there. The solution works. You just need to ship._
